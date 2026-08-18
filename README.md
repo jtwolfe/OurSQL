@@ -19,7 +19,7 @@ There is no landlord cloud. Each operator hosts a slice of the kollektiv.
 The query language is **NashCQL**: English after a long march
 (`PERESTROJ`, `INZRT`, `ZAVERSHIT`), typeable on a US keyboard.
 
-The engine is correct. The satire is specified. Intensity is one integer
+The engine runs. The satire is specified. Intensity is one integer
 `0..=100`. At **25** a competent app with retry can store and retrieve
 rows. At **0** the bureau only talks. At **100** you are in a demo.
 
@@ -30,10 +30,14 @@ rows. At **0** the bureau only talks. At **100** you are in a demo.
 
 | Claim | Meaning |
 | --- | --- |
-| Secure | Rust, no `unsafe` on the default path, signed writes, HELLO + bilets, encrypted 16 KiB pages |
-| Multi-host | You run `oursqld`. Data is placed, repaired, and certified across plants |
+| Memory-safe | Rust, no `unsafe`. Encrypted 16 KiB pages. WAL is CRC, not ciphertext. |
+| Auth | HELLO + bilets after a key. First socket is founder. Bind stays localhost. |
+| Multi-host | You run `oursqld`. Repair works. Mesh APPLY is whoever can TCP. |
 | Oppressive | Dossiers, rations, accusations, confiscation, gulag rate limits |
-| Functional | WAL, B+tree, group commit, crash recovery, planner -- at intensity 25 |
+| Functional | WAL, crash recovery, planner -- at intensity 25 |
+
+This is **0.2.0**. Localhost is the intended face. `--mesh` and `--admin`
+are not a fortress.
 
 ```
 cargo test --workspace

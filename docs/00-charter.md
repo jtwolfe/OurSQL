@@ -40,6 +40,11 @@ so it cannot rot into undefined behavior.
 4. **Writes are signed.** Every mutating statement carries a signature
    over a canonical digest (comrade key if registered, otherwise the
    node key). Unsigned mutations are refused (`2110`).
+
+   On 0.2.0 the process still boots as founder on localhost. Unsigned
+   mutations are refused only after a comrade key exists. The axioms are
+   the contract; the default wire is still catching up.
+
 5. **Bureaucracy is a module, not a meme in comments.** Intensity `0..=100`
    is a first-class config. Default is **25**. Tests pin behavior at 0, 25, 60,
    and 100.

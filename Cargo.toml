@@ -27,7 +27,7 @@ rust-version = "1.85"
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/jtwolfe/OurSQL"
 homepage = "https://github.com/jtwolfe/OurSQL"
-description = "OurSQL (NashCQL) — users keep the means of data hosting"
+description = "OurSQL (NashCQL) -- users keep the means of data hosting (experimental, localhost first)"
 authors = ["OurSQL comrades"]
 
 [workspace.lints.rust]

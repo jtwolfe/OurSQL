@@ -10,6 +10,10 @@
 6. Expire what you empower.
 7. No `unsafe` on the default path.
 
+0.2.0 default bind is localhost. The text protocol does not require
+HELLO. Mesh APPLY is not signed. Treat `--admin` as an unauthenticated
+founder shell.
+
 ## Crypto suite (phase 1)
 
 | Use | Algorithm |
