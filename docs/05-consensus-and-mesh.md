@@ -13,7 +13,7 @@ A **kollektiv** is a named database with:
 
 Joining:
 
-1. Applicant presents `PETITION SOYUZ`.
+1. Optional: applicant `PETITION SOYUZ` (audit only).
 2. A komitet member runs `NAGRAD SOYUZ NA COMRADE plant`.
 3. The new plant `--peer`s an existing node and NEED/SNAPSHOTs.
 4. View epoch increments (see `POKAZ USTANOV` / `epoch`).
@@ -61,8 +61,9 @@ OTMENA / retry. This is "first committer wins," not last-writer-wins.
 | `ZAVERSHIT SOYUZ` | WAL + quorum certify | Shared truth |
 | `ZAVERSHIT CHEKA` | same as SOYUZ + extra audit | Confiscation / membership |
 
-Clients that do not say which they want inherit `default_commit` from
-`node.toml` (install default: `LOCAL` on size-1, `SOYUZ` on size>=3).
+Clients that do not say which they want inherit `default_commit`
+(`LOCAL` unless `USTANOV commit` or `node.toml default_commit` says
+otherwise). Size of the view does not change that default.
 
 ## Gossip
 
@@ -105,6 +106,6 @@ Permissioned keys match "comrades we can name."
 
 ## Placement
 
-Rows are placed by `hash(narodkey) % member_count` with `R` successors.
-Operators may pin a tabl to a **brigade** (subset of nodes) for data
-residency. Pinning is a PERESTROJ on the tabl, certified.
+Rows are placed by `owners(narodkey, rf)`: `rf = 0` means every plant,
+otherwise that many members plus the writer. There is no tabl-level
+pin in this tree.

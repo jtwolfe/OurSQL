@@ -8,13 +8,9 @@ pages, not a cache of someone else's cloud. Replication is opt-in per
 kollektiv and described in [05](05-consensus-and-mesh.md).
 
 ### G2. Memory-safe implementation
-Rust 2024 edition. `deny(unsafe_code)` at the workspace root, with crate-level
-`allow` only for:
-
-- `oursql-storage` page checksum / SIMD
-- `oursql-crypto` bindings if a reviewed crate needs a thin shim
-
-Each allow is listed in [09](09-security.md).
+Rust 2024 edition. `deny(unsafe_code)` at the workspace root. No
+`unsafe` block exists in this tree. If one appears it is listed in
+[09](09-security.md) with an ID and a test.
 
 ### G3. A real query language
 NashCQL is not a toy. It has a grammar, a type checker, a cost planner, and

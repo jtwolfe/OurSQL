@@ -27,13 +27,14 @@ We use a simple four-box model. Every feature must name which box it shrinks.
 
 ### T1. Forged writes
 Mitigation: Ed25519 signatures over a canonical mutation digest
-`(kollektiv, tabl, schema_epoch, stmt_hash, ts, dossier)`. Replay window is
-bounded. See [09](09-security.md).
+`(kollektiv, schema_epoch, stmt_canonical, narodkeys, comrade, ts)`
+as in [05](05-consensus-and-mesh.md). Replay window is bounded.
+See [09](09-security.md).
 
 ### T2. Node impersonation
-Mitigation: mutual TLS with pin-set or TOFU plus rotation ceremony. Node
-identity != comrade identity. A stolen disk does not yield the comrade key
-if the key is sealed (age / OS keyring / operator-held).
+Mitigation: HELLO KEY/PODPIS on the query socket; optional rustls 1.3
+(`--features tls`). Node identity != comrade identity. A stolen disk
+holds `node.key`, not a comrade private key the plant never stored.
 
 ### T3. Split-brain certification
 Mitigation: permissioned quorum. Writes that require `ZAVERSHIT SOYUZ` abort
@@ -69,7 +70,7 @@ from the founding komitet.
 ## Trust boundaries
 
 ```
-[app] --tls--> [oursql-cli / driver]
+[app] --tcp--> [oursql-cli / driver]   (optional rustls)
                     |
                     v
               [oursql-node]

@@ -6,11 +6,12 @@ SKLAD is a page engine, not a heap-plus-sidecar-index toy.
 
 ## Pages
 
-- Size: 16 KiB (configurable 8/16/32 at kollektiv create, then frozen).
+- Size: 16 KiB (`PAGE_SIZE`). Not configurable in this tree.
 - Checksum: BLAKE3 over plaintext, stored in the encrypted header.
 - Encryption: XChaCha20-Poly1305 per page. Key is the kollektiv data key,
   wrapped per node with the node's storage key.
-- Page types: leaf, branch, overflow, undo, meta, freelist.
+- Page types in the header enum: leaf, branch, overflow, undo, meta,
+  freelist. The pager walks leaf/branch/overflow.
 
 ## Indexes
 

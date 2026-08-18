@@ -172,3 +172,44 @@ fn official_docs_are_us_keyboard_ascii() {
         }
     }
 }
+
+#[test]
+fn docs_do_not_contradict_each_other() {
+    let mut blob = read("README.md");
+    for ent in std::fs::read_dir(repo().join("docs")).unwrap() {
+        let p = ent.unwrap().path();
+        if p.extension().and_then(|s| s.to_str()) == Some("md") {
+            blob.push_str("\n");
+            blob.push_str(&std::fs::read_to_string(p).unwrap());
+        }
+    }
+    // phrases that used to appear in one doc and the opposite in another
+    for banned in [
+        "core < core",
+        "tokio",
+        "configurable 8/16/32",
+        "X25519",
+        "listen.public",
+        "_meta.audit",
+        "Phase 0 -- design frozen",
+        "TEKST NOT NYET",
+    ] {
+        assert!(
+            !blob.contains(banned),
+            "stale phrase still in docs: {banned}"
+        );
+    }
+    let five = read("docs/05-consensus-and-mesh.md");
+    let two = read("docs/02-threat-model.md");
+    for field in ["kollektiv", "schema_epoch", "narodkeys", "comrade"] {
+        assert!(five.contains(field), "05 digest missing {field}");
+        assert!(
+            two.contains(field) || two.contains("narodkeys"),
+            "02 should point at 05 digest"
+        );
+    }
+    assert!(read("docs/03-architecture.md").contains("std::thread"));
+    assert!(read("docs/10-wire-protocol.md").contains("optional"));
+    assert!(read("docs/13-ops-and-hosting.md").contains("default_commit"));
+    assert!(!read("docs/08-bureaucracy.md").contains("[bureau]"));
+}

@@ -69,12 +69,12 @@ See [`docs/15-brigades.md`](docs/15-brigades.md). Implementation plan:
 ZANIM sklad;
 MANUFAKTUR TABL parts (
   id        NARODKEY,
-  name      TEKST NOT NYET,
+  name      TEKST NYET PUSTO,
   qty       CELIY,
   SOLIDARITY (depot_id) IZ depots (id)
 );
 
-INZRT V parts (name, qty) ZNACH ('bolt', 40)
+INZRT V parts (id, name, qty) ZNACH ('p1', 'bolt', 40)
   SAMOKRIT 'serves the inventory brigade';
 
 OBTAN name, qty IZ parts GIVEN qty > 0 LINEUP name RATION 20;
@@ -85,7 +85,9 @@ and may emit a warning: `NOTICE 1901: bourgeois keywords tolerated at intensity 
 
 ## Status
 
-Phase 0 -- design frozen enough to implement. See the plan.
+Phases 1-11 are in this tree. See [12](docs/12-implementation-plan.md).
+Stored procedures, a SQL compatibility pack, a geo pin UI, and coins
+are explicitly later.
 
 ## License
 

@@ -11,8 +11,8 @@
 +------------------------------------------------------+
 |  Session (dossier, ration counters, intensity view)  |
 +----------------+------------------+------------------+
-|  Bureau        |  NashCQL front   |  Capability gate |
-|  (policy)      |  parse/plan/exec |  (authz)         |
+|  Bureau        |  NashCQL parse   |  Capability gate |
+|  (policy)      |  (engine plans)  |  (authz)         |
 +----------------+------------------+------------------+
 |  Consensus / mesh (oursql-consensus)                 |
 |  views, certification, placement                     |
@@ -79,6 +79,6 @@ ceremony, not a rewrite of user tabls.
 
 - **Separation** keeps satire from corrupting durability.
 - **Signed IR** keeps two dialects from becoming two security holes.
-- **Async workers** keep the "complicated" part in policy, not in
-  thread-per-connection collapse.
+- **One thread per session** keeps sockets simple; the "complicated"
+  part stays in bureau, not in a runtime.
 - **Host-local pages** keep the means of hosting with the operator.

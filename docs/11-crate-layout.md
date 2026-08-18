@@ -6,7 +6,7 @@ Workspace root `Cargo.toml` is virtual.
 oursql/
   crates/
     oursql-core         # types, ids, errors, intensity
-    oursql-crypto       # thin wrappers, zeroize
+    oursql-crypto       # BLAKE3, Ed25519, XChaCha20, CRC
     oursql-storage      # SKLAD
     oursql-nashcql      # lexer, parser, IR
     oursql-engine       # planner + executor
@@ -24,7 +24,7 @@ oursql/
 ```
 core < crypto
 core < storage
-core < core < nashcql
+core < nashcql
 core < bureau
 core < authz
 core < consensus
@@ -48,7 +48,7 @@ cli depends on engine (embedded) and can talk OCHERED/1 via driver
 - edition = "2024", rust-version 1.85
 - `rust-version` pinned in workspace
 - `unsafe_code` deny
-- `missing_docs` warn on published crates
+- `unsafe_code` deny (workspace lint). No `missing_docs` lint yet.
 
 ## Binaries
 
@@ -57,8 +57,6 @@ cli depends on engine (embedded) and can talk OCHERED/1 via driver
 | oursqld | oursql-node | server |
 | oursql | oursql-cli | REPL + admin |
 
-## Minimum viable compile (phase 0)
-
-Each crate has `src/lib.rs` that exports a module map and a
-`version()` fn. `oursql-core` already has `Intensity` and the error
-catalog stub so docs and code cannot drift without a test.
+Each crate exports `version()`. The doc check in
+`oursql-engine/tests/doc_check.rs` keeps the catalog, keywords, and
+OCHERED types from drifting.

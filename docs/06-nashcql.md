@@ -169,11 +169,9 @@ No leading digits. No `$`. No unicode letters.
 
 ## Planner notes
 
-- Cost-based. Statistics live in `POKAZ SPRAVKA`.
+- `RAZBOR` prints `NARODKEY`, `SPRAVKA`, or `SEQSCAN`.
+- GIVEN on a narodkey uses the pager. Everything else is a scan.
 - Full scans are legal. They are not morally superior.
-- At intensity >= 80 the planner *may* inject a notice when a plan is
-  "too clever" (index-only on a hot tabl). It still uses the index.
-  Usefulness wins.
 
 ## Errors
 

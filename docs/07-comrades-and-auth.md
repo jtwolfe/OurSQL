@@ -63,7 +63,9 @@ OTYAT OBTAN IZ COMRADE mill;
 Authorization is **union** of live bilets for that comrade. Missing
 deystv = deny. A bilet with `predel = bolts` cannot INZRT into `secrets`.
 
-`NAGRAD` and `OTYAT` require an ADMIN / god bilet (the founders have one).
+`NAGRAD` and `OTYAT` require a komitet seat. Founders start on that
+set. `ADMIN` / god is a bilet, not a substitute for the seat
+(`2111 NOT_KOMITET`).
 
 ## CHEKA
 

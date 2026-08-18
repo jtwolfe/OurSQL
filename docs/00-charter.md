@@ -35,9 +35,11 @@ so it cannot rot into undefined behavior.
 2. **Users keep the means of data hosting.** A node that is off the mesh still
    holds its pages. Leaving the mesh does not delete local durable state.
 3. **No silent root.** There is no `COMRADE root@%` with eternal `SUPER`.
-   Bootstrap produces a **founding komitet** of N capability holders.
-4. **Writes are signed.** Every mutating statement carries a comrade signature
-   over a canonical digest. Unsigned mutations are refused.
+   Bootstrap produces the **FOUNDERS** komitet and seats the first
+   comrade. More seats are `NAGRAD KOMITET`.
+4. **Writes are signed.** Every mutating statement carries a signature
+   over a canonical digest (comrade key if registered, otherwise the
+   node key). Unsigned mutations are refused (`2110`).
 5. **Bureaucracy is a module, not a meme in comments.** Intensity `0..=100`
    is a first-class config. Default is **25**. Tests pin behavior at 0, 25, 60,
    and 100.

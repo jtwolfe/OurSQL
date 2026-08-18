@@ -54,5 +54,8 @@ on `oursql-storage`.
 | CLI | oursql-cli | `oursql` bin | server |
 | NODE | oursql-node | `oursqld` bin | planner guts |
 
+The picture is assembly, not a Cargo.toml graph. AUTHZ and MESH depend
+on CORE, not on SKLAD.
+
 Tests live **in the brigade they judge**. Cross-brigade stories live in
 `oursql-engine/tests`.

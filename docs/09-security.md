@@ -17,7 +17,7 @@
 | Comrade / node identity | Ed25519 |
 | Mutation digest | BLAKE3 |
 | Page encryption | XChaCha20-Poly1305 |
-| Wrapping kollektiv keys | X25519 + XChaCha20-Poly1305 |
+| Wrapping kollektiv keys | XChaCha20-Poly1305 with the node storage key |
 | TLS | rustls, TLS 1.3 only, optional mTLS (`oursqld --features tls`) |
 
 We do not implement these ourselves. We use reviewed crates
@@ -39,8 +39,8 @@ Allowed later, each with a file comment and a test:
 - Max frame 16 MiB.
 - Max in-flight statements per session: 2.
 - Idle timeout required in the production profile.
-- Bind `0.0.0.0` only if `listen.public = true` AND a pin-set is configured.
-  Dev profile may bind localhost.
+- Default listen is `127.0.0.1:3307`. Binding a public address is an
+  operator choice (`--listen`); there is no separate public-bind flag.
 
 ## Injection
 
@@ -55,14 +55,15 @@ Every 19xx and every mutation writes an audit record:
 (ts, dossier, comrade, verb, scope, digest, intensity, note)
 ```
 
-Audit tabl `_meta.audit` is append-only. REMOV is refused. OCHISTKA
-requires CHEKA + two founders.
+Audit is the append-only file `kollektiv/sklad/audit/audit.log`
+(see [04](04-storage-engine.md)). `POKAZ AUDIT` reads it.
 
 ## Key handling
 
 - `node.key` mode 0600, refuse start otherwise.
 - Comrade keys never written to WAL in raw form.
-- Memory: keys live in `secrecy` / zeroizing types.
+- Memory: `node.key` is 64 hex bytes on disk; the process holds the
+  Ed25519 key in `oursql-crypto::KeyPair` (dalek, which zeroizes).
 - Rotation: `PERESTROJ COMRADE ... ROTATE KEY` with overlap window.
 
 ## Supply chain

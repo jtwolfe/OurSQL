@@ -64,8 +64,8 @@ ACCUSE COMRADE 'mill'@'plant-3' OF SPY SAMOKRIT 'odd ration pattern';
 
 - Threshold: 60 for automatic requirement, 25 as an **opt-in** hint
   (`USTANOV require_approval = DA` on a tabl).
-- A waiting mutation appears in `POKAZ OCHERED`. Any comrade with
-  `APPROVE` on that scope can `NAGRAD APPROVAL DOS-...`.
+- At 60 the mutating session waits on `NAGRAD APPROVAL` (`APPROVE`
+  is the same deystv). There is no `POKAZ OCHERED` list in this tree.
 - Usefulness: default tabls at 25 do not wait on humans.
 
 ### B6. KGB / CHEKA confiscation
@@ -105,16 +105,18 @@ INZRT V parts ZNACH (...) SAMOKRIT 'serves depot 2';
 - Block intensity 0 writes
 - Use wall-clock sleep inside storage locks
 
-## Knobs (`node.toml`)
+## Knobs
 
-```toml
-[bureau]
-intensity = 25
+These are `Bureau` field defaults. `--config` / `examples/node.toml`
+does **not** parse a bureau table (see [13](13-ops-and-hosting.md)).
+Intensity is `--intensity` or `USTANOV intensity`.
+
+```
 ration_qps = 40
 ration_burst = 80
 partial_pct = 8
-review_delay_ms = { min = 40, max = 180 }
-confiskat_ttl = "24h"
+review_delay_ms = 40..=180
+confiskat_ttl = 24h
 accuse_per_day = 3
 ```
 
