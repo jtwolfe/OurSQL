@@ -85,6 +85,22 @@ impl LocalMesh {
         Ok(v.epoch)
     }
 
+    pub fn install_view(&self, members: Vec<String>, epoch: u64) {
+        let mut g = self.inner.lock().expect("mesh");
+        {
+            let v = g.views.entry("default".into()).or_default();
+            v.members = members.iter().cloned().collect();
+            v.epoch = epoch;
+        }
+        for m in members {
+            g.inboxes.entry(m).or_default();
+        }
+    }
+
+    pub fn view_snapshot(&self) -> (Vec<String>, u64) {
+        (self.members(), self.epoch())
+    }
+
     pub fn epoch(&self) -> u64 {
         self.inner
             .lock()

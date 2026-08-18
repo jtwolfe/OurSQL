@@ -18,7 +18,7 @@
 | Mutation digest | BLAKE3 |
 | Page encryption | XChaCha20-Poly1305 |
 | Wrapping kollektiv keys | X25519 + XChaCha20-Poly1305 |
-| TLS | rustls, TLS 1.3 only, mTLS |
+| TLS | rustls, TLS 1.3 only, optional mTLS (`oursqld --features tls`) |
 
 We do not implement these ourselves. We use reviewed crates
 (`ed25519-dalek`, `blake3`, `chacha20poly1305`, `rustls`).
@@ -75,3 +75,17 @@ requires CHEKA + two founders.
 
 See [SECURITY.md](../SECURITY.md). Report privately. We do not pay in
 coins we refused to mint.
+
+
+## rustls (optional brigade)
+
+Default `oursqld` is plaintext on a host-bound socket (HELLO still
+requires PODPIS once a key is known). Rebuild with TLS:
+
+```
+cargo build -p oursql-node --release --features tls
+oursqld --tls-cert plant.crt --tls-key plant.key --tls-ca kollektiv.crt
+```
+
+`--tls-ca` turns on mTLS. The musl multi-arch script does not enable
+this feature so ring/C does not block those brigades.

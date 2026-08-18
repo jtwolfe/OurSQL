@@ -62,6 +62,7 @@ pub struct Sklad {
     tables: BTreeMap<(String, String), Table>,
     holds: BTreeMap<(String, String), Option<u64>>,
     pub last_sig: Option<(String, String)>,
+    pub last_signer: Option<String>,
     pub schema_epoch: u64,
     pub perestroj_wait: bool,
     pub audit_path: PathBuf,
@@ -134,6 +135,7 @@ impl Sklad {
             last_commit_recs: Vec::new(),
             last_seq: 0,
             last_sig: None,
+            last_signer: None,
             schema_epoch: 1,
             perestroj_wait: false,
             audit_path,
@@ -339,9 +341,17 @@ impl Sklad {
             WalRec::Osvobod { kollektiv, table } => {
                 self.holds.remove(&(kollektiv.clone(), table.clone()));
             }
-            WalRec::Commit { digest, sig, .. } => {
+            WalRec::Commit {
+                digest,
+                sig,
+                signer,
+                ..
+            } => {
                 if !digest.is_empty() {
                     self.last_sig = Some((digest.clone(), sig.clone()));
+                    if !signer.is_empty() {
+                        self.last_signer = Some(signer.clone());
+                    }
                 }
             }
             WalRec::CreateIndex {
@@ -482,7 +492,12 @@ impl Sklad {
             .last_sig
             .clone()
             .unwrap_or_else(|| (String::new(), String::new()));
-        recs.push(WalRec::commit_signed(tx, digest, sig));
+        recs.push(WalRec::commit_signed_by(
+            tx,
+            digest,
+            sig,
+            self.last_signer.clone().unwrap_or_default(),
+        ));
         for r in &recs {
             self.wal.queue(r)?;
         }
@@ -921,8 +936,12 @@ impl Sklad {
                 let Some(s) = oursql_crypto::unhex64(sig) else {
                     return Err(Error::recovery_failed("bad commit podpis"));
                 };
-                if !oursql_crypto::KeyPair::verify(&self.identity.keys.public_hex(), &d, &s) {
-                    return Err(Error::recovery_failed("WAL podpis does not match node key"));
+                let pk = match rec {
+                    WalRec::Commit { signer, .. } if !signer.is_empty() => signer.clone(),
+                    _ => self.identity.keys.public_hex(),
+                };
+                if !oursql_crypto::KeyPair::verify(&pk, &d, &s) {
+                    return Err(Error::recovery_failed("WAL podpis does not match signer"));
                 }
                 return Ok(());
             }

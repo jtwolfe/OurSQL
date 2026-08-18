@@ -462,6 +462,10 @@ impl Authz {
         self.save()
     }
 
+    pub fn pubkey_for(&self, name: &str) -> Option<&str> {
+        self.pubkeys.get(name).map(|s| s.as_str())
+    }
+
     pub fn sign_mutation(&self, digest: &[u8; 32]) -> String {
         hex(&self.node.sign(digest))
     }

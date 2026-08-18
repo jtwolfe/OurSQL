@@ -7,11 +7,14 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+#[cfg(feature = "tls")]
+mod tls;
+
 use oursql_consensus::{ApplyMsg, request_repair, serve_mesh};
 use oursql_core::{Intensity, Value};
 use oursql_engine::Engine;
 use oursql_wire::{
-    Frame, T_BIND, T_DONE, T_ERROR, T_HELLO, T_PING, T_STMT, T_WELCOME, error_payload,
+    Frame, T_BIND, T_DONE, T_ERROR, T_HELLO, T_PING, T_PODPIS, T_STMT, T_WELCOME, error_payload,
     outcome_frames, parse_hello, split_statements, welcome_payload,
 };
 
@@ -32,6 +35,11 @@ fn run() -> oursql_core::Result<()> {
     let mut mesh: Option<String> = None;
     let mut peers: Vec<String> = Vec::new();
     let mut admin: Option<String> = None;
+    let mut tls_cert: Option<PathBuf> = None;
+    let mut tls_key: Option<PathBuf> = None;
+    let mut tls_ca: Option<PathBuf> = None;
+    let mut default_commit = "LOCAL".to_string();
+    let mut rf = 0usize;
 
     while let Some(a) = args.next() {
         match a.as_str() {
@@ -42,6 +50,11 @@ fn run() -> oursql_core::Result<()> {
             "--mesh" => mesh = Some(args.next().expect("addr")),
             "--peer" => peers.push(args.next().expect("addr")),
             "--admin" => admin = Some(args.next().expect("addr")),
+            "--tls-cert" => tls_cert = Some(PathBuf::from(args.next().expect("pem"))),
+            "--tls-key" => tls_key = Some(PathBuf::from(args.next().expect("pem"))),
+            "--tls-ca" => tls_ca = Some(PathBuf::from(args.next().expect("pem"))),
+            "--commit" => default_commit = args.next().expect("kind"),
+            "--rf" => rf = args.next().expect("n").parse().unwrap_or(0),
             "--config" => {
                 let cfg = PathBuf::from(args.next().expect("toml"));
                 apply_toml(
@@ -52,6 +65,11 @@ fn run() -> oursql_core::Result<()> {
                     &mut mesh,
                     &mut peers,
                     &mut admin,
+                    &mut tls_cert,
+                    &mut tls_key,
+                    &mut tls_ca,
+                    &mut default_commit,
+                    &mut rf,
                 );
             }
             "--intensity" => {
@@ -60,7 +78,7 @@ fn run() -> oursql_core::Result<()> {
             }
             "--help" | "-h" => {
                 println!(
-                    "oursqld [init|run] [--data DIR] [--listen ADDR] [--name ID] [--mesh ADDR] [--peer ADDR] [--admin ADDR] [--config FILE] [--intensity N]"
+                    "oursqld [init|run] [--data DIR] [--listen ADDR] [--name ID] [--mesh ADDR] [--peer ADDR] [--admin ADDR] [--config FILE] [--intensity N] [--tls-cert P] [--tls-key P] [--commit KIND] [--rf N]"
                 );
                 return Ok(());
             }
@@ -83,6 +101,10 @@ fn run() -> oursql_core::Result<()> {
     eng.node_name = name.clone();
     eng.mesh.join(&name);
     eng.peers = peers.clone();
+    eng.rf = rf;
+    if let Some(k) = oursql_core::CommitKind::parse(&default_commit) {
+        eng.default_commit = k;
+    }
     let shared = Arc::new(Mutex::new(eng));
 
     if let Some(addr) = mesh.clone() {
@@ -125,18 +147,56 @@ fn run() -> oursql_core::Result<()> {
         eprintln!("admin {}", admin.unwrap());
     }
 
+    if tls_cert.is_some() != tls_key.is_some() {
+        return Err(oursql_core::Error::wal_io(
+            "--tls-cert and --tls-key are a pair",
+        ));
+    }
+    #[cfg(not(feature = "tls"))]
+    if tls_cert.is_some() {
+        return Err(oursql_core::Error::wal_io(
+            "rebuild oursqld with --features tls for rustls",
+        ));
+    }
+    #[cfg(feature = "tls")]
+    let tls_cfg = if let (Some(c), Some(k)) = (tls_cert.as_deref(), tls_key.as_deref()) {
+        Some(tls::server_config(c, k, tls_ca.as_deref())?)
+    } else {
+        None
+    };
+
     let listener = TcpListener::bind(&listen)?;
     eprintln!(
-        "oursqld {} intensity {} listen {listen} data {} name {name}",
+        "oursqld {} intensity {} listen {listen} data {} name {name} tls={}",
         oursql_core::version(),
         intensity,
-        data.display()
+        data.display(),
+        tls_cert.is_some()
     );
     for conn in listener.incoming() {
         let Ok(stream) = conn else { continue };
         let shared = Arc::clone(&shared);
+        #[cfg(feature = "tls")]
+        let cfg = tls_cfg.clone();
         thread::spawn(move || {
-            if let Err(e) = handle(stream, shared) {
+            let res = {
+                #[cfg(feature = "tls")]
+                {
+                    if let Some(cfg) = cfg {
+                        match tls::accept(stream, &cfg) {
+                            Ok(tls_s) => handle_rw(tls_s, shared, true),
+                            Err(e) => Err(e),
+                        }
+                    } else {
+                        handle(stream, shared)
+                    }
+                }
+                #[cfg(not(feature = "tls"))]
+                {
+                    handle(stream, shared)
+                }
+            };
+            if let Err(e) = res {
                 eprintln!("session: {e}");
             }
         });
@@ -219,8 +279,16 @@ fn handle_line(stream: std::net::TcpStream, eng: Arc<Mutex<Engine>>) -> oursql_c
     Ok(())
 }
 
-fn handle_binary(
-    mut stream: std::net::TcpStream,
+fn handle_rw<S: Read + Write>(
+    stream: S,
+    eng: Arc<Mutex<Engine>>,
+    _binary: bool,
+) -> oursql_core::Result<()> {
+    handle_binary(stream, eng)
+}
+
+fn handle_binary<S: Read + Write>(
+    mut stream: S,
     eng: Arc<Mutex<Engine>>,
 ) -> oursql_core::Result<()> {
     loop {
@@ -263,6 +331,15 @@ fn handle_binary(
                 Frame {
                     typ: T_DONE,
                     payload: b"bound".to_vec(),
+                }
+                .write_to(&mut stream)?;
+            }
+            T_PODPIS => {
+                let sig = String::from_utf8_lossy(&f.payload).trim().to_string();
+                eng.lock().expect("engine").session_podpis = Some(sig);
+                Frame {
+                    typ: T_DONE,
+                    payload: b"podpis".to_vec(),
                 }
                 .write_to(&mut stream)?;
             }
@@ -353,6 +430,11 @@ fn apply_toml(
     mesh: &mut Option<String>,
     peers: &mut Vec<String>,
     admin: &mut Option<String>,
+    tls_cert: &mut Option<PathBuf>,
+    tls_key: &mut Option<PathBuf>,
+    tls_ca: &mut Option<PathBuf>,
+    default_commit: &mut String,
+    rf: &mut usize,
 ) {
     for raw in text.lines() {
         let line = raw.split('#').next().unwrap_or("").trim();
@@ -371,6 +453,11 @@ fn apply_toml(
             "mesh" => *mesh = Some(v.to_string()),
             "peer" => peers.push(v.to_string()),
             "admin" => *admin = Some(v.to_string()),
+            "tls_cert" | "tls-cert" => *tls_cert = Some(PathBuf::from(v)),
+            "tls_key" | "tls-key" => *tls_key = Some(PathBuf::from(v)),
+            "tls_ca" | "tls-ca" => *tls_ca = Some(PathBuf::from(v)),
+            "default_commit" | "commit" => *default_commit = v.to_string(),
+            "rf" => *rf = v.parse().unwrap_or(0),
             _ => {}
         }
     }

@@ -20,6 +20,7 @@ pub const T_DONE: u8 = 0x06;
 pub const T_NOTICE: u8 = 0x07;
 pub const T_ERROR: u8 = 0x08;
 pub const T_PING: u8 = 0x0B;
+pub const T_PODPIS: u8 = 0x09;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Frame {

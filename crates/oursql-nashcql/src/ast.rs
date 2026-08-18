@@ -29,17 +29,20 @@ pub enum Stmt {
         cols: Option<Vec<String>>,
         rows: Vec<Vec<Expr>>,
         samokrit: Option<String>,
+        podpis: Option<String>,
     },
     Opdat {
         table: String,
         assigns: Vec<(String, Expr)>,
         given: Option<Expr>,
         samokrit: Option<String>,
+        podpis: Option<String>,
     },
     Remov {
         table: String,
         given: Option<Expr>,
         samokrit: Option<String>,
+        podpis: Option<String>,
     },
     Obtan {
         distinct: bool,
@@ -235,6 +238,15 @@ impl Stmt {
             Stmt::Inzrt { samokrit, .. }
             | Stmt::Opdat { samokrit, .. }
             | Stmt::Remov { samokrit, .. } => samokrit.as_deref(),
+            _ => None,
+        }
+    }
+
+    pub fn podpis(&self) -> Option<&str> {
+        match self {
+            Stmt::Inzrt { podpis, .. }
+            | Stmt::Opdat { podpis, .. }
+            | Stmt::Remov { podpis, .. } => podpis.as_deref(),
             _ => None,
         }
     }

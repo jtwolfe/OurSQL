@@ -305,11 +305,13 @@ impl Parser {
             rows.push(self.row_vals()?);
         }
         let samokrit = self.samokrit_opt()?;
+        let podpis = self.podpis_opt()?;
         Ok(Stmt::Inzrt {
             table,
             cols,
             rows,
             samokrit,
+            podpis,
         })
     }
 
@@ -343,11 +345,13 @@ impl Parser {
             None
         };
         let samokrit = self.samokrit_opt()?;
+        let podpis = self.podpis_opt()?;
         Ok(Stmt::Opdat {
             table,
             assigns,
             given,
             samokrit,
+            podpis,
         })
     }
 
@@ -361,10 +365,12 @@ impl Parser {
             None
         };
         let samokrit = self.samokrit_opt()?;
+        let podpis = self.podpis_opt()?;
         Ok(Stmt::Remov {
             table,
             given,
             samokrit,
+            podpis,
         })
     }
 
@@ -478,10 +484,10 @@ impl Parser {
                 self.i += 1;
                 k
             } else {
-                CommitKind::Local
+                CommitKind::Inherit
             }
         } else {
-            CommitKind::Local
+            CommitKind::Inherit
         };
         Ok(Stmt::Zavershit(kind))
     }
@@ -664,6 +670,17 @@ impl Parser {
             verb,
             comrade: self.eat_ident()?,
         })
+    }
+
+    fn podpis_opt(&mut self) -> Result<Option<String>> {
+        if self.try_kw("PODPIS") {
+            match self.bump()? {
+                Tok::String(s) | Tok::Ident(s) => Ok(Some(s)),
+                other => Err(Error::bad_grammar(format!("PODPIS wants hex, {other:?}"))),
+            }
+        } else {
+            Ok(None)
+        }
     }
 
     fn samokrit_opt(&mut self) -> Result<Option<String>> {

@@ -77,6 +77,7 @@ pub enum CommitKind {
     Local,
     Soyuz,
     Cheka,
+    Inherit,
 }
 
 impl CommitKind {
@@ -85,6 +86,7 @@ impl CommitKind {
             "LOCAL" => Some(Self::Local),
             "SOYUZ" => Some(Self::Soyuz),
             "CHEKA" => Some(Self::Cheka),
+            "INHERIT" | "DEFAULT" => Some(Self::Inherit),
             _ => None,
         }
     }

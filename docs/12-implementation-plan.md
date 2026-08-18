@@ -94,6 +94,13 @@
 - `kill -9` after ZAVERSHIT: rows survive reopen
 - Edition 2024; CI `cargo deny check` is no longer `|| true`
 
+## Phase 11 — speak and sign as comrades — done
+
+- `view.json` persists members / epoch / rf / default_commit
+- Bare `ZAVERSHIT` uses `USTANOV commit = SOYUZ` (node.toml `default_commit`)
+- A comrade with a registered key must PODPIS each mutation; WAL stores the signer
+- rustls TLS 1.3 is `--features tls` + `--tls-cert` / `--tls-key` (optional `--tls-ca` mTLS)
+
 ## Explicitly later
 
 - Stored procedures

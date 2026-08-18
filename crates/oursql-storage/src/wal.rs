@@ -19,6 +19,8 @@ pub enum WalRec {
         digest: String,
         #[serde(default)]
         sig: String,
+        #[serde(default)]
+        signer: String,
     },
     Abort {
         tx: u64,
@@ -73,14 +75,25 @@ impl WalRec {
             tx,
             digest: String::new(),
             sig: String::new(),
+            signer: String::new(),
         }
     }
 
     pub fn commit_signed(tx: u64, digest: impl Into<String>, sig: impl Into<String>) -> Self {
+        Self::commit_signed_by(tx, digest, sig, "")
+    }
+
+    pub fn commit_signed_by(
+        tx: u64,
+        digest: impl Into<String>,
+        sig: impl Into<String>,
+        signer: impl Into<String>,
+    ) -> Self {
         Self::Commit {
             tx,
             digest: digest.into(),
             sig: sig.into(),
+            signer: signer.into(),
         }
     }
 }

@@ -35,6 +35,8 @@ pub struct Engine {
     pub binds: Vec<Value>,
     pub last_plan: String,
     pub rf: usize,
+    pub default_commit: CommitKind,
+    pub session_podpis: Option<String>,
     audit: Vec<String>,
     seen: HashSet<String>,
 }
@@ -55,7 +57,7 @@ impl Engine {
         authz.nagrad_god(comrade.0.clone());
         let mesh = LocalMesh::new();
         mesh.join("local");
-        Ok(Self {
+        let mut e = Self {
             sklad,
             bureau: Bureau::new(intensity),
             authz,
@@ -69,15 +71,70 @@ impl Engine {
             binds: Vec::new(),
             last_plan: "SEQSCAN".into(),
             rf: 0,
+            default_commit: CommitKind::Local,
+            session_podpis: None,
             audit: Vec::new(),
             seen: HashSet::new(),
-        })
+        };
+        e.restore_view();
+        Ok(e)
     }
 
     pub fn attach_mesh(&mut self, mesh: LocalMesh, name: impl Into<String>) {
         self.mesh = mesh;
         self.node_name = name.into();
         self.mesh.join(&self.node_name);
+        self.persist_view();
+    }
+
+    fn view_path(&self) -> std::path::PathBuf {
+        self.sklad.data_dir().join("view.json")
+    }
+
+    fn persist_view(&self) {
+        let (members, epoch) = self.mesh.view_snapshot();
+        let body = serde_json::json!({
+            "members": members,
+            "epoch": epoch,
+            "rf": self.rf,
+            "default_commit": match self.default_commit {
+                oursql_core::CommitKind::Soyuz => "SOYUZ",
+                oursql_core::CommitKind::Cheka => "CHEKA",
+                _ => "LOCAL",
+            },
+        });
+        let _ = std::fs::write(self.view_path(), body.to_string());
+    }
+
+    fn restore_view(&mut self) {
+        let Ok(raw) = std::fs::read_to_string(self.view_path()) else {
+            return;
+        };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else {
+            return;
+        };
+        let members = v
+            .get("members")
+            .and_then(|m| m.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let epoch = v.get("epoch").and_then(|e| e.as_u64()).unwrap_or(0);
+        if !members.is_empty() {
+            self.mesh.install_view(members, epoch);
+            self.mesh.join(&self.node_name);
+        }
+        if let Some(rf) = v.get("rf").and_then(|r| r.as_u64()) {
+            self.rf = rf as usize;
+        }
+        if let Some(c) = v.get("default_commit").and_then(|c| c.as_str()) {
+            if let Some(k) = CommitKind::parse(c) {
+                self.default_commit = k;
+            }
+        }
     }
 
     pub fn execute(&mut self, sql: &str) -> Result<Outcome> {
@@ -100,17 +157,40 @@ impl Engine {
                 return Err(Error::unsigned_mutation());
             }
             if stmt.is_mutation() && signed {
+                let canonical = strip_podpis_clause(sql);
                 let d = mutation_digest(
                     &self.sklad.kollektiv,
                     1,
-                    sql,
+                    &canonical,
                     stmt.table_touch().unwrap_or("-"),
                     &self.comrade.0,
                     0,
                 );
-                let sig = self.authz.sign_mutation(&d);
-                self.last_sig = Some(sig.clone());
-                self.sklad.last_sig = Some((hex(&d), sig));
+                if let Some(pk) = self
+                    .authz
+                    .pubkey_for(&self.comrade.0)
+                    .map(|s| s.to_string())
+                {
+                    let sig = stmt
+                        .podpis()
+                        .map(|s| s.to_string())
+                        .or_else(|| self.session_podpis.take())
+                        .ok_or_else(Error::unsigned_mutation)?;
+                    let Some(raw) = oursql_crypto::unhex64(&sig) else {
+                        return Err(Error::bad_hello());
+                    };
+                    if !oursql_crypto::KeyPair::verify(&pk, &d, &raw) {
+                        return Err(Error::unsigned_mutation());
+                    }
+                    self.last_sig = Some(sig.clone());
+                    self.sklad.last_sig = Some((hex(&d), sig));
+                    self.sklad.last_signer = Some(pk);
+                } else {
+                    let sig = self.authz.sign_mutation(&d);
+                    self.last_sig = Some(sig.clone());
+                    self.sklad.last_sig = Some((hex(&d), sig));
+                    self.sklad.last_signer = Some(self.authz.node.public_hex());
+                }
             }
             last = self.exec_stmt(stmt)?;
         }
@@ -294,10 +374,7 @@ impl Engine {
                 Ok(Outcome::empty())
             }
             Stmt::Inzrt {
-                table,
-                cols,
-                rows,
-                samokrit: _,
+                table, cols, rows, ..
             } => {
                 let schema = self.sklad.columns(&table)?;
                 let mut n = 0u64;
@@ -616,6 +693,11 @@ impl Engine {
                 Ok(Outcome::empty())
             }
             Stmt::Zavershit(kind) => {
+                let kind = if matches!(kind, CommitKind::Inherit) {
+                    self.default_commit
+                } else {
+                    kind
+                };
                 let tx = self.sklad.commit(kind)?;
                 if matches!(kind, CommitKind::Soyuz | CommitKind::Cheka) {
                     self.mesh
@@ -698,6 +780,10 @@ impl Engine {
                         Value::Tekst("view".into()),
                         Value::Tekst(self.mesh.members().join(",")),
                     ],
+                    vec![
+                        Value::Tekst("commit".into()),
+                        Value::Tekst(format!("{:?}", self.default_commit)),
+                    ],
                 ],
                 partial: false,
                 notice: None,
@@ -760,6 +846,14 @@ impl Engine {
                         Intensity::new(n).map_err(|_| Error::intensity_denied())?;
                 } else if k == "rf" {
                     self.rf = value.parse().unwrap_or(0);
+                    self.persist_view();
+                } else if k == "commit" || k == "default_commit" || k == "zavershit" {
+                    if let Some(kind) = CommitKind::parse(&value) {
+                        self.default_commit = kind;
+                        self.persist_view();
+                    }
+                } else if k == "podpis" {
+                    self.session_podpis = Some(value);
                 }
                 Ok(Outcome::empty())
             }
@@ -811,6 +905,7 @@ impl Engine {
                         return Err(Error::not_komitet());
                     }
                     self.mesh.join(&comrade);
+                    self.persist_view();
                     self.audit("JOIN", &comrade);
                     return Ok(Outcome::empty()
                         .with_notice(format!("JOIN {comrade} epoch={}", self.mesh.epoch())));
@@ -848,6 +943,7 @@ impl Engine {
                     return Err(Error::not_komitet());
                 }
                 let epoch = self.mesh.leave(&node)?;
+                self.persist_view();
                 self.audit("LEAVE", &node);
                 Ok(Outcome::empty().with_notice(format!("LEAVE {node} epoch={epoch}")))
             }
@@ -1336,4 +1432,18 @@ fn narodkeys_of(recs: &[WalRec]) -> Vec<String> {
         }
     }
     out
+}
+
+fn strip_podpis_clause(sql: &str) -> String {
+    let up = sql.to_ascii_uppercase();
+    if let Some(i) = up.rfind(" PODPIS ") {
+        sql[..i].trim().to_string()
+    } else if let Some(i) = up.rfind(
+        "
+PODPIS ",
+    ) {
+        sql[..i].trim().to_string()
+    } else {
+        sql.to_string()
+    }
 }
