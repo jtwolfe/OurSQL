@@ -144,6 +144,7 @@ impl Sklad {
         };
         s.load_checkpoint()?;
         let recs = Wal::recover(&s.wal.path)?;
+        s.verify_commit_sigs(&recs)?;
         s.replay(&recs)?;
         Ok(s)
     }
@@ -304,6 +305,7 @@ impl Sklad {
                     t.rows.insert(key.clone(), values.clone());
                     self.bump_narod(key);
                 }
+                self.pager_put(kollektiv, table, key, values)?;
             }
             WalRec::Update {
                 kollektiv,
@@ -314,6 +316,7 @@ impl Sklad {
                 if let Some(t) = self.tables.get_mut(&(kollektiv.clone(), table.clone())) {
                     t.rows.insert(key.clone(), values.clone());
                 }
+                self.pager_put(kollektiv, table, key, values)?;
             }
             WalRec::Delete {
                 kollektiv,
@@ -323,6 +326,7 @@ impl Sklad {
                 if let Some(t) = self.tables.get_mut(&(kollektiv.clone(), table.clone())) {
                     t.rows.remove(key);
                 }
+                self.pager_del(kollektiv, table, key)?;
             }
             WalRec::Confiskat {
                 kollektiv,
@@ -881,6 +885,47 @@ impl Sklad {
         }
         if standalone {
             self.commit(CommitKind::Local)?;
+        }
+        Ok(())
+    }
+
+    fn pager_put(&mut self, k: &str, t: &str, key: &NarodKey, values: &[Value]) -> Result<()> {
+        let Some(pool) = self.pool.as_mut() else {
+            return Ok(());
+        };
+        let kk = format!("r:{k}/{t}/{}", key.0).into_bytes();
+        let vv = serde_json::to_vec(values).map_err(|e| Error::wal_io(e.to_string()))?;
+        pool.insert(&kk, &vv)
+    }
+
+    fn pager_del(&mut self, k: &str, t: &str, key: &NarodKey) -> Result<()> {
+        let Some(pool) = self.pool.as_mut() else {
+            return Ok(());
+        };
+        let kk = format!("r:{k}/{t}/{}", key.0).into_bytes();
+        pool.delete(&kk)
+    }
+
+    fn verify_commit_sigs(&self, recs: &[WalRec]) -> Result<()> {
+        for rec in recs.iter().rev() {
+            if let WalRec::Commit { digest, sig, .. } = rec {
+                if digest.is_empty() {
+                    return Ok(());
+                }
+                let Some(d) = oursql_crypto::unhex32(digest) else {
+                    return Err(Error::recovery_failed("bad commit digest"));
+                };
+                if sig.is_empty() {
+                    return Err(Error::recovery_failed("unsigned commit in WAL"));
+                }
+                let Some(s) = oursql_crypto::unhex64(sig) else {
+                    return Err(Error::recovery_failed("bad commit podpis"));
+                };
+                if !oursql_crypto::KeyPair::verify(&self.identity.keys.public_hex(), &d, &s) {
+                    return Err(Error::recovery_failed("WAL podpis does not match node key"));
+                }
+                return Ok(());
+            }
         }
         Ok(())
     }

@@ -8,9 +8,12 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use oursql_consensus::{request_repair, serve_mesh, ApplyMsg};
-use oursql_core::Intensity;
+use oursql_core::{Intensity, Value};
 use oursql_engine::Engine;
-use oursql_wire::split_statements;
+use oursql_wire::{
+    error_payload, outcome_frames, parse_hello, split_statements, welcome_payload, Frame, T_BIND,
+    T_DONE, T_ERROR, T_HELLO, T_PING, T_STMT, T_WELCOME,
+};
 
 fn main() {
     if let Err(e) = run() {
@@ -144,6 +147,26 @@ fn run() -> oursql_core::Result<()> {
 fn handle(stream: std::net::TcpStream, eng: Arc<Mutex<Engine>>) -> oursql_core::Result<()> {
     stream.set_nodelay(true)?;
     stream
+        .set_read_timeout(Some(std::time::Duration::from_millis(80)))
+        .ok();
+    let mut probe = [0u8; 1];
+    let binary = stream
+        .peek(&mut probe)
+        .ok()
+        .map(|n| n > 0 && probe[0] == 0)
+        .unwrap_or(false);
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(300)))
+        .ok();
+    if binary {
+        return handle_binary(stream, eng);
+    }
+    handle_line(stream, eng)
+}
+
+fn handle_line(stream: std::net::TcpStream, eng: Arc<Mutex<Engine>>) -> oursql_core::Result<()> {
+    stream.set_nodelay(true)?;
+    stream
         .set_read_timeout(Some(std::time::Duration::from_secs(300)))
         .ok();
     let mut reader = BufReader::new(stream.try_clone()?);
@@ -192,6 +215,97 @@ fn handle(stream: std::net::TcpStream, eng: Arc<Mutex<Engine>>) -> oursql_core::
         }
         writeln!(writer, ".")?;
         acc.clear();
+    }
+    Ok(())
+}
+
+fn handle_binary(
+    mut stream: std::net::TcpStream,
+    eng: Arc<Mutex<Engine>>,
+) -> oursql_core::Result<()> {
+    loop {
+        let f = match Frame::read_from(&mut stream) {
+            Ok(f) => f,
+            Err(_) => break,
+        };
+        match f.typ {
+            T_HELLO => {
+                let (c, _nonce, _) = parse_hello(&f.payload)?;
+                let mut g = eng.lock().expect("engine");
+                let _ = g.execute(&format!("HELLO COMRADE {c}"));
+                Frame {
+                    typ: T_WELCOME,
+                    payload: welcome_payload(
+                        &g.dossier.0,
+                        g.bureau.intensity.get(),
+                        &g.node_name,
+                        1,
+                    ),
+                }
+                .write_to(&mut stream)?;
+            }
+            T_BIND => {
+                let text = String::from_utf8_lossy(&f.payload);
+                let mut binds = Vec::new();
+                for line in text.lines() {
+                    let line = line.trim();
+                    if line.is_empty() {
+                        continue;
+                    }
+                    let v = if let Ok(n) = line.parse::<i64>() {
+                        Value::Celiy(n)
+                    } else {
+                        Value::Tekst(line.trim_matches('\'').into())
+                    };
+                    binds.push(v);
+                }
+                eng.lock().expect("engine").binds = binds;
+                Frame {
+                    typ: T_DONE,
+                    payload: b"bound".to_vec(),
+                }
+                .write_to(&mut stream)?;
+            }
+            T_STMT => {
+                let sql = String::from_utf8_lossy(&f.payload).to_string();
+                let res = {
+                    let mut g = eng.lock().expect("engine");
+                    g.execute(&sql)
+                };
+                match res {
+                    Ok(out) => {
+                        for fr in outcome_frames(&out) {
+                            fr.write_to(&mut stream)?;
+                        }
+                    }
+                    Err(e) => {
+                        Frame {
+                            typ: T_ERROR,
+                            payload: error_payload(
+                                e.code,
+                                e.retry_after_ms.unwrap_or(0),
+                                &e.to_string(),
+                            ),
+                        }
+                        .write_to(&mut stream)?;
+                    }
+                }
+            }
+            T_PING => {
+                Frame {
+                    typ: T_DONE,
+                    payload: b"pong".to_vec(),
+                }
+                .write_to(&mut stream)?;
+            }
+            _ => {
+                Frame {
+                    typ: T_ERROR,
+                    payload: error_payload(1801, 0, "bad frame"),
+                }
+                .write_to(&mut stream)?;
+            }
+        }
     }
     Ok(())
 }

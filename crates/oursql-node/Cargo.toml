@@ -22,3 +22,5 @@ oursql-consensus.workspace = true
 oursql-storage.workspace = true
 serde_json.workspace = true
 
+[dev-dependencies]
+oursql-driver.workspace = true

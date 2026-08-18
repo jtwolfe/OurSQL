@@ -157,26 +157,153 @@ impl PagePool {
     }
 
     pub fn insert(&mut self, key: &[u8], val: &[u8]) -> Result<()> {
-        let mut pairs = self.scan_all()?;
+        let path = self.descend_path(key)?;
+        let leaf = *path.last().unwrap();
+        let (_, pay) = self.get(leaf)?;
+        let mut pairs = decode_pairs(&pay);
         pairs.retain(|(k, _)| k.as_slice() != key);
         pairs.push((key.to_vec(), val.to_vec()));
         pairs.sort_by(|a, b| a.0.cmp(&b.0));
-        self.rebuild(&pairs)
+        let encoded = encode_pairs(&pairs);
+        if encoded.len() <= PAGE_SIZE - 48 && pairs.len() <= 24 {
+            self.put(leaf, PageType::Leaf, &encoded)?;
+            self.fix_sep(&path, leaf, &pairs[0].0)?;
+            return Ok(());
+        }
+        self.split_leaf(&path, pairs)
     }
 
     pub fn delete(&mut self, key: &[u8]) -> Result<()> {
-        let mut pairs = self.scan_all()?;
+        let path = self.descend_path(key)?;
+        let leaf = *path.last().unwrap();
+        let (_, pay) = self.get(leaf)?;
+        let mut pairs = decode_pairs(&pay);
+        let n = pairs.len();
         pairs.retain(|(k, _)| k.as_slice() != key);
-        self.rebuild(&pairs)
+        if pairs.len() == n {
+            return Ok(());
+        }
+        self.put(leaf, PageType::Leaf, &encode_pairs(&pairs))?;
+        if !pairs.is_empty() {
+            self.fix_sep(&path, leaf, &pairs[0].0)?;
+        }
+        Ok(())
     }
 
     pub fn get_key(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        for (k, v) in self.scan_all()? {
+        let path = self.descend_path(key)?;
+        let leaf = *path.last().unwrap();
+        let (_, pay) = self.get(leaf)?;
+        for (k, v) in decode_pairs(&pay) {
             if k == key {
                 return Ok(Some(v));
             }
         }
         Ok(None)
+    }
+
+    fn descend_path(&self, key: &[u8]) -> Result<Vec<u32>> {
+        let mut path = vec![self.root];
+        loop {
+            let id = *path.last().unwrap();
+            let (ty, pay) = self.get(id)?;
+            match ty {
+                PageType::Leaf | PageType::Overflow => return Ok(path),
+                PageType::Branch => {
+                    let ch = decode_children_kv(&pay);
+                    if ch.is_empty() {
+                        return Err(Error::recovery_failed("empty branch"));
+                    }
+                    path.push(choose_child(&ch, key));
+                }
+                _ => return Err(Error::recovery_failed("bad page in descend")),
+            }
+        }
+    }
+
+    fn fix_sep(&mut self, path: &[u32], child: u32, min: &[u8]) -> Result<()> {
+        if path.len() < 2 {
+            return Ok(());
+        }
+        let parent = path[path.len() - 2];
+        let (ty, pay) = self.get(parent)?;
+        if ty != PageType::Branch {
+            return Ok(());
+        }
+        let mut ch = decode_children_kv(&pay);
+        for (id, sep) in &mut ch {
+            if *id == child {
+                *sep = min.to_vec();
+            }
+        }
+        self.put(parent, PageType::Branch, &encode_children(&ch))
+    }
+
+    fn split_leaf(&mut self, path: &[u32], pairs: Vec<(Vec<u8>, Vec<u8>)>) -> Result<()> {
+        let leaf = *path.last().unwrap();
+        let mid = pairs.len() / 2;
+        let (left, right) = pairs.split_at(mid.max(1));
+        if right.is_empty() {
+            self.put(leaf, PageType::Leaf, &encode_pairs(left))?;
+            return Ok(());
+        }
+        self.put(leaf, PageType::Leaf, &encode_pairs(left))?;
+        let new_id = self.next_id;
+        self.next_id += 1;
+        self.put(new_id, PageType::Leaf, &encode_pairs(right))?;
+        self.insert_child(
+            &path[..path.len() - 1],
+            leaf,
+            &left[0].0,
+            new_id,
+            &right[0].0,
+        )
+    }
+
+    fn insert_child(
+        &mut self,
+        ancestors: &[u32],
+        left_id: u32,
+        left_min: &[u8],
+        right_id: u32,
+        right_min: &[u8],
+    ) -> Result<()> {
+        if ancestors.is_empty() {
+            let root = self.next_id;
+            self.next_id += 1;
+            let kids = vec![(left_id, left_min.to_vec()), (right_id, right_min.to_vec())];
+            self.put(root, PageType::Branch, &encode_children(&kids))?;
+            self.root = root;
+            return Ok(());
+        }
+        let parent = *ancestors.last().unwrap();
+        let (_, pay) = self.get(parent)?;
+        let mut ch = decode_children_kv(&pay);
+        if let Some((_, sep)) = ch.iter_mut().find(|(id, _)| *id == left_id) {
+            *sep = left_min.to_vec();
+        }
+        ch.push((right_id, right_min.to_vec()));
+        ch.sort_by(|a, b| a.1.cmp(&b.1));
+        let encoded = encode_children(&ch);
+        if encoded.len() <= PAGE_SIZE - 48 && ch.len() <= 24 {
+            return self.put(parent, PageType::Branch, &encoded);
+        }
+        let mid = ch.len() / 2;
+        let (l, r) = ch.split_at(mid.max(1));
+        if r.is_empty() {
+            return self.put(parent, PageType::Branch, &encode_children(l));
+        }
+        self.put(parent, PageType::Branch, &encode_children(l))?;
+        let new_id = self.next_id;
+        self.next_id += 1;
+        self.put(new_id, PageType::Branch, &encode_children(r))?;
+        self.insert_child(
+            &ancestors[..ancestors.len() - 1],
+            parent,
+            &l[0].1,
+            new_id,
+            &r[0].1,
+        )
     }
 
     /// Walk every leaf in key order. This is the page walker OBTAN uses.
@@ -327,6 +454,46 @@ fn decode_children(pay: &[u8]) -> Vec<u32> {
         out.push(id);
     }
     out
+}
+
+fn decode_children_kv(pay: &[u8]) -> Vec<(u32, Vec<u8>)> {
+    if pay.len() < 2 {
+        return Vec::new();
+    }
+    let n = u16::from_le_bytes(pay[0..2].try_into().unwrap()) as usize;
+    let mut i = 2;
+    let mut out = Vec::new();
+    for _ in 0..n {
+        if i + 4 > pay.len() {
+            break;
+        }
+        let id = u32::from_le_bytes(pay[i..i + 4].try_into().unwrap());
+        i += 4;
+        if i + 2 > pay.len() {
+            break;
+        }
+        let kl = u16::from_le_bytes(pay[i..i + 2].try_into().unwrap()) as usize;
+        i += 2;
+        if i + kl > pay.len() {
+            break;
+        }
+        let key = pay[i..i + kl].to_vec();
+        i += kl;
+        out.push((id, key));
+    }
+    out
+}
+
+fn choose_child(ch: &[(u32, Vec<u8>)], key: &[u8]) -> u32 {
+    let mut pick = ch[0].0;
+    for (id, sep) in ch {
+        if sep.as_slice() <= key {
+            pick = *id;
+        } else {
+            break;
+        }
+    }
+    pick
 }
 
 #[cfg(test)]

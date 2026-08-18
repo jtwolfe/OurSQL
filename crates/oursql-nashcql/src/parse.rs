@@ -802,6 +802,7 @@ impl Parser {
 
     fn expr_prim(&mut self) -> Result<Expr> {
         match self.bump()? {
+            Tok::Param(n) => Ok(Expr::Param(n)),
             Tok::Int(n) => Ok(Expr::Lit(Value::Celiy(n))),
             Tok::Float(f) => Ok(Expr::Lit(Value::Drob(f))),
             Tok::String(s) => Ok(Expr::Lit(Value::Tekst(s))),

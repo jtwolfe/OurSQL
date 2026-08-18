@@ -25,6 +25,7 @@ pub enum Tok {
     Minus,
     Slash,
     Semi,
+    Param(u32),
 }
 
 pub fn lex(input: &str) -> Result<Vec<Tok>> {
@@ -138,6 +139,15 @@ pub fn lex(input: &str) -> Result<Vec<Tok>> {
                     i += 1;
                 }
                 out.push(Tok::Ident(ident));
+            }
+            b'$' => {
+                i += 1;
+                let start = i;
+                while i < b.len() && b[i].is_ascii_digit() {
+                    i += 1;
+                }
+                let n = input[start..i].parse::<u32>().unwrap_or(0);
+                out.push(Tok::Param(n));
             }
             b'-' if i + 1 < b.len() && b[i + 1].is_ascii_digit() => {
                 let (tok, n) = number(&input[i..])?;

@@ -3,7 +3,7 @@
 use oursql_core::{Column, Error, Result, Value};
 use oursql_nashcql::{BinOp, Expr, UnaryOp};
 
-pub fn eval(expr: &Expr, cols: &[Column], row: &[Value]) -> Result<Value> {
+pub fn eval(expr: &Expr, cols: &[Column], row: &[Value], binds: &[Value]) -> Result<Value> {
     match expr {
         Expr::Lit(v) => Ok(v.clone()),
         Expr::Col(name) => {
@@ -17,7 +17,7 @@ pub fn eval(expr: &Expr, cols: &[Column], row: &[Value]) -> Result<Value> {
             Ok(row.get(i).cloned().unwrap_or(Value::Pusto))
         }
         Expr::Unary { op, inner } => {
-            let v = eval(inner, cols, row)?;
+            let v = eval(inner, cols, row, binds)?;
             match op {
                 UnaryOp::Nyet => Ok(Value::Daily(!truthy(&v))),
                 UnaryOp::Neg => match v {
@@ -29,27 +29,29 @@ pub fn eval(expr: &Expr, cols: &[Column], row: &[Value]) -> Result<Value> {
         }
         Expr::Binary { op, left, right } => match op {
             BinOp::I => {
-                let l = eval(left, cols, row)?;
+                let l = eval(left, cols, row, binds)?;
                 if !truthy(&l) {
                     return Ok(Value::Daily(false));
                 }
-                let r = eval(right, cols, row)?;
+                let r = eval(right, cols, row, binds)?;
                 Ok(Value::Daily(truthy(&r)))
             }
             BinOp::Ili => {
-                let l = eval(left, cols, row)?;
+                let l = eval(left, cols, row, binds)?;
                 if truthy(&l) {
                     return Ok(Value::Daily(true));
                 }
-                let r = eval(right, cols, row)?;
+                let r = eval(right, cols, row, binds)?;
                 Ok(Value::Daily(truthy(&r)))
             }
-            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => {
-                arith(*op, &eval(left, cols, row)?, &eval(right, cols, row)?)
-            }
+            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => arith(
+                *op,
+                &eval(left, cols, row, binds)?,
+                &eval(right, cols, row, binds)?,
+            ),
             cmp => {
-                let l = eval(left, cols, row)?;
-                let r = eval(right, cols, row)?;
+                let l = eval(left, cols, row, binds)?;
+                let r = eval(right, cols, row, binds)?;
                 let ord = l.cmp_nash(&r);
                 let b = match (cmp, ord) {
                     (BinOp::Eq, Some(std::cmp::Ordering::Equal)) => true,
@@ -66,7 +68,7 @@ pub fn eval(expr: &Expr, cols: &[Column], row: &[Value]) -> Result<Value> {
             }
         },
         Expr::IsPusto(inner, yes) => {
-            let v = eval(inner, cols, row)?;
+            let v = eval(inner, cols, row, binds)?;
             Ok(Value::Daily(v.is_pusto() == *yes))
         }
         Expr::Call { name, args } => {
@@ -77,13 +79,19 @@ pub fn eval(expr: &Expr, cols: &[Column], row: &[Value]) -> Result<Value> {
                     if args.is_empty() {
                         Ok(Value::Pusto)
                     } else {
-                        eval(&args[0], cols, row)
+                        eval(&args[0], cols, row, binds)
                     }
                 }
                 _ => Err(Error::unknown_ident(format!("fn {name}"))),
             }
         }
-        Expr::Param(_) => Err(Error::bad_grammar("unbound PARAM")),
+        Expr::Param(n) => {
+            let i = (*n as usize).saturating_sub(1);
+            binds
+                .get(i)
+                .cloned()
+                .ok_or_else(|| Error::bad_grammar(format!("unbound ${n}")))
+        }
     }
 }
 
@@ -149,6 +157,6 @@ mod tests {
             left: Box::new(Expr::Col("qty".into())),
             right: Box::new(Expr::Lit(Value::Celiy(0))),
         };
-        assert_eq!(eval(&e, &cols, &row).unwrap(), Value::Daily(true));
+        assert_eq!(eval(&e, &cols, &row, &[]).unwrap(), Value::Daily(true));
     }
 }

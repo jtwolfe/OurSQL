@@ -4,7 +4,7 @@
 
 #![deny(unsafe_code)]
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -183,6 +183,8 @@ struct Persist {
     caps: Vec<Capability>,
     #[serde(default)]
     next_bilet: u64,
+    #[serde(default)]
+    pubkeys: HashMap<String, String>,
 }
 
 pub struct Authz {
@@ -191,6 +193,7 @@ pub struct Authz {
     pub caps: Vec<Capability>,
     next_bilet: u64,
     path: PathBuf,
+    pubkeys: HashMap<String, String>,
 }
 
 impl Authz {
@@ -206,6 +209,7 @@ impl Authz {
                 caps: p.caps,
                 next_bilet: p.next_bilet.max(1),
                 path,
+                pubkeys: p.pubkeys,
             });
         }
         let founder = "founder".to_string();
@@ -215,6 +219,7 @@ impl Authz {
             caps: vec![Capability::god(&founder)],
             next_bilet: 1,
             path,
+            pubkeys: HashMap::new(),
         };
         a.save()?;
         Ok(a)
@@ -229,6 +234,7 @@ impl Authz {
             caps: vec![Capability::god(&founder)],
             next_bilet: 1,
             path: PathBuf::from("authz.json"),
+            pubkeys: HashMap::new(),
         }
     }
 
@@ -240,6 +246,7 @@ impl Authz {
             comrades: self.comrades.clone(),
             caps: self.caps.clone(),
             next_bilet: self.next_bilet,
+            pubkeys: self.pubkeys.clone(),
         };
         let s = serde_json::to_string_pretty(&p).map_err(|e| Error::wal_io(e.to_string()))?;
         std::fs::write(&self.path, s)?;
@@ -350,6 +357,9 @@ impl Authz {
     }
 
     pub fn hello(&self, name: &str) -> Result<ComradeId> {
+        if self.pubkeys.contains_key(name) {
+            return Err(Error::bad_hello());
+        }
         if self.comrades.contains(name) || self.caps.iter().any(|c| c.comrade == name) {
             Ok(ComradeId(name.to_string()))
         } else {
@@ -372,13 +382,16 @@ impl Authz {
             return Err(Error::bad_hello());
         }
         self.comrades.insert(name.to_string());
+        self.pubkeys.insert(name.to_string(), key.to_string());
+        let _ = self.save();
         Ok(ComradeId(name.to_string()))
     }
 
-    pub fn rotate_key(&mut self, comrade: &str, _key: &str) -> Result<()> {
+    pub fn rotate_key(&mut self, comrade: &str, key: &str) -> Result<()> {
         if !self.comrades.contains(comrade) {
             return Err(Error::cap_expired());
         }
+        self.pubkeys.insert(comrade.to_string(), key.to_string());
         self.save()
     }
 

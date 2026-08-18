@@ -339,6 +339,10 @@ pub const KEYWORDS: &[Keyword] = &[
         nash: "KEY",
         sql: "KEY",
     },
+    Keyword {
+        nash: "PODPIS",
+        sql: "SIGNATURE",
+    },
 ];
 
 pub fn is_keyword(s: &str) -> bool {

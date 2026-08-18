@@ -76,6 +76,15 @@
 - plan_id loan/repay, approval at 60, REVIEW_WAIT, node.toml
 - CI workflow + grammar.md
 
+## Phase 9 — charter true — done
+
+- ZAVERSHIT SOYUZ waits for quorum (`2102` if a peer is down; local row stays)
+- oursqld speaks OCHERED/1 when the first byte is a frame; T_BIND + `$1`
+- WAL commit digest+podpis verified on reopen
+- HELLO KEY/PODPIS required once a comrade has a key
+- RAZBOR prints NARODKEY / SPRAVKA / SEQSCAN; GIVEN uses the pager
+- B+tree insert/split/delete in place; checkpoint is a flush
+
 ## Explicitly later
 
 - Stored procedures

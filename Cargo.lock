@@ -378,6 +378,7 @@ dependencies = [
  "oursql-consensus",
  "oursql-core",
  "oursql-crypto",
+ "oursql-driver",
  "oursql-engine",
  "oursql-storage",
  "oursql-wire",

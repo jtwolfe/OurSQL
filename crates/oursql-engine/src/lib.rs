@@ -16,7 +16,7 @@ use oursql_core::{
     Column, CommitKind, ComradeId, Dossier, Error, Intensity, Outcome, Result, Value,
 };
 use oursql_crypto::{hex, mutation_digest};
-use oursql_nashcql::{parse, Expr, SelectItem, Stmt};
+use oursql_nashcql::{parse, BinOp, Expr, SelectItem, Stmt};
 use oursql_storage::{Sklad, WalRec};
 
 use crate::eval::{eval, truthy};
@@ -32,6 +32,8 @@ pub struct Engine {
     pub require_sign: bool,
     pub last_sig: Option<String>,
     pub peers: Vec<String>,
+    pub binds: Vec<Value>,
+    pub last_plan: String,
     audit: Vec<String>,
     seen: HashSet<String>,
 }
@@ -63,6 +65,8 @@ impl Engine {
             require_sign: true,
             last_sig: None,
             peers: Vec::new(),
+            binds: Vec::new(),
+            last_plan: "SEQSCAN".into(),
             audit: Vec::new(),
             seen: HashSet::new(),
         })
@@ -102,8 +106,9 @@ impl Engine {
                     &self.comrade.0,
                     0,
                 );
-                self.last_sig = Some(self.authz.sign_mutation(&d));
-                let _ = hex(&d);
+                let sig = self.authz.sign_mutation(&d);
+                self.last_sig = Some(sig.clone());
+                self.sklad.last_sig = Some((hex(&d), sig));
             }
             last = self.exec_stmt(stmt)?;
         }
@@ -121,10 +126,10 @@ impl Engine {
         Ok(())
     }
 
-    fn publish_commit(&mut self) {
+    fn publish_commit(&mut self) -> Result<usize> {
         let recs = &self.sklad.last_commit_recs;
         if recs.is_empty() {
-            return;
+            return Ok(1);
         }
         let recs_json = serde_json::to_string(recs).unwrap_or_else(|_| "[]".into());
         let d = mutation_digest(
@@ -141,17 +146,19 @@ impl Engine {
             recs_json,
             digest: hex(&d),
         };
-        self.mesh.publish(&self.node_name, msg.clone());
-        let mut acks = 1usize; // self
+        let mesh_acks = self.mesh.publish(&self.node_name, msg.clone());
+        let mut acks = 1 + mesh_acks;
         for p in &self.peers {
             if oursql_consensus::push_peer(p, &msg).unwrap_or(false) {
                 acks += 1;
             }
         }
-        let q = (self.peers.len() + 1) / 2 + 1;
-        if acks < q && !self.peers.is_empty() {
-            self.last_sig = Some(format!("BELOW_QUORUM {acks}/{q}"));
+        let n = self.mesh.members().len().max(1 + self.peers.len());
+        let q = n / 2 + 1;
+        if n > 1 && acks < q {
+            return Err(Error::below_quorum());
         }
+        Ok(acks)
     }
 
     pub fn snapshot_msg(&self) -> ApplyMsg {
@@ -296,7 +303,7 @@ impl Engine {
                 let mut n = 0u64;
                 for row in rows {
                     if let Some(g) = &given {
-                        if !truthy(&eval(g, &schema, &row.values)?) {
+                        if !truthy(&eval(g, &schema, &row.values, &self.binds)?) {
                             continue;
                         }
                     }
@@ -306,7 +313,7 @@ impl Engine {
                             .iter()
                             .position(|c| c.name.eq_ignore_ascii_case(col))
                             .ok_or_else(|| Error::unknown_ident(format!("column {col}")))?;
-                        let v = eval(expr, &schema, &vals)?;
+                        let v = eval(expr, &schema, &vals, &self.binds)?;
                         vals[i] = v.coerce(schema[i].ty)?;
                     }
                     self.sklad.update_row(&table, &row.key, vals)?;
@@ -320,7 +327,7 @@ impl Engine {
                 let mut n = 0u64;
                 for row in rows {
                     if let Some(g) = &given {
-                        if !truthy(&eval(g, &schema, &row.values)?) {
+                        if !truthy(&eval(g, &schema, &row.values, &self.binds)?) {
                             continue;
                         }
                     }
@@ -364,6 +371,25 @@ impl Engine {
                 });
                 let mut schema = self.sklad.columns(&from)?;
                 let mut rows = self.sklad.scan(&from)?;
+                self.last_plan = "SEQSCAN".into();
+                if let Some(g) = &given {
+                    for (col, val) in extract_eqs(g) {
+                        if schema
+                            .iter()
+                            .any(|c| c.narodkey && c.name.eq_ignore_ascii_case(&col))
+                        {
+                            let want = val.to_plain();
+                            rows.retain(|r| r.key.0 == want);
+                            self.last_plan = "NARODKEY".into();
+                            break;
+                        }
+                        if let Ok(Some(keys)) = self.sklad.lookup_index(&from, &col, &val) {
+                            rows.retain(|r| keys.iter().any(|k| k == &r.key));
+                            self.last_plan = "SPRAVKA".into();
+                            break;
+                        }
+                    }
+                }
                 if let Some(j) = &join {
                     let rschema = self.sklad.columns(&j.table)?;
                     let rrows = self.sklad.scan(&j.table)?;
@@ -375,8 +401,10 @@ impl Engine {
                         for r in &rrows {
                             let mut vals = l.values.clone();
                             vals.extend(r.values.iter().cloned());
-                            if truthy(&eval(&j.on, &cschema, &vals).unwrap_or(Value::Daily(false)))
-                            {
+                            if truthy(
+                                &eval(&j.on, &cschema, &vals, &self.binds)
+                                    .unwrap_or(Value::Daily(false)),
+                            ) {
                                 combined.push(oursql_core::Row {
                                     key: l.key.clone(),
                                     values: vals,
@@ -398,7 +426,7 @@ impl Engine {
                 }
                 if let Some(g) = &given {
                     rows.retain(|r| {
-                        eval(g, &schema, &r.values)
+                        eval(g, &schema, &r.values, &self.binds)
                             .map(|v| truthy(&v))
                             .unwrap_or(false)
                     });
@@ -420,7 +448,7 @@ impl Engine {
                 }
                 if let Some(h) = &priokaz {
                     rows.retain(|r| {
-                        eval(h, &schema, &r.values)
+                        eval(h, &schema, &r.values, &self.binds)
                             .map(|v| truthy(&v))
                             .unwrap_or(false)
                     });
@@ -484,7 +512,14 @@ impl Engine {
                         count += 1;
                         for (i, p) in proj.iter().enumerate() {
                             if let SelectItem::Expr { expr, .. } = p {
-                                acc[i] = fold_agg(&acc[i], expr, &schema, &row.values, count)?;
+                                acc[i] = fold_agg(
+                                    &acc[i],
+                                    expr,
+                                    &schema,
+                                    &row.values,
+                                    count,
+                                    &self.binds,
+                                )?;
                             }
                         }
                     }
@@ -527,7 +562,7 @@ impl Engine {
                             match p {
                                 SelectItem::Star => out.extend(row.values.iter().cloned()),
                                 SelectItem::Expr { expr, .. } => {
-                                    out.push(eval(expr, &schema, &row.values)?);
+                                    out.push(eval(expr, &schema, &row.values, &self.binds)?);
                                 }
                             }
                         }
@@ -563,7 +598,7 @@ impl Engine {
                     let _ = self
                         .mesh
                         .certify(&self.node_name, &format!("tx-{tx}"), kind);
-                    self.publish_commit();
+                    self.publish_commit()?;
                 }
                 Ok(Outcome::Count {
                     n: tx,
@@ -596,7 +631,7 @@ impl Engine {
                     table: table.clone(),
                     until,
                 }];
-                self.publish_commit();
+                self.publish_commit()?;
                 Ok(Outcome::empty().with_notice(format!("CONFISKAT {table}")))
             }
             Stmt::Osvobod { table } => {
@@ -605,7 +640,7 @@ impl Engine {
                     kollektiv: self.sklad.kollektiv.clone(),
                     table: table.clone(),
                 }];
-                self.publish_commit();
+                self.publish_commit()?;
                 Ok(Outcome::empty())
             }
             Stmt::PokazTabl => {
@@ -654,9 +689,38 @@ impl Engine {
                     notice: None,
                 })
             }
-            Stmt::Razbor(inner) => Ok(Outcome::Razbor {
-                text: format!("{inner:?}"),
-            }),
+            Stmt::Razbor(inner) => {
+                let text = match inner.as_ref() {
+                    Stmt::Obtan { from, given, .. } => {
+                        let schema = self.sklad.columns(from).unwrap_or_default();
+                        let mut kind = "SEQSCAN";
+                        if let Some(g) = given {
+                            for (col, val) in extract_eqs(g) {
+                                if schema
+                                    .iter()
+                                    .any(|c| c.narodkey && c.name.eq_ignore_ascii_case(&col))
+                                {
+                                    kind = "NARODKEY";
+                                    break;
+                                }
+                                if self
+                                    .sklad
+                                    .lookup_index(from, &col, &val)
+                                    .ok()
+                                    .flatten()
+                                    .is_some()
+                                {
+                                    kind = "SPRAVKA";
+                                    break;
+                                }
+                            }
+                        }
+                        format!("{kind} {from}")
+                    }
+                    other => format!("{other:?}"),
+                };
+                Ok(Outcome::Razbor { text })
+            }
             Stmt::Ustanov { key, value } => {
                 if key.to_ascii_lowercase().contains("intensity") {
                     let n: u8 = value.parse().unwrap_or(25);
@@ -813,7 +877,7 @@ impl Engine {
                     .iter()
                     .position(|c| c.name.eq_ignore_ascii_case(name))
                     .ok_or_else(|| Error::unknown_ident(format!("column {name}")))?;
-                out[i] = eval(&e, schema, eval_row)?;
+                out[i] = eval(&e, schema, eval_row, &self.binds)?;
             }
             Ok(out)
         } else {
@@ -822,7 +886,7 @@ impl Engine {
             }
             exprs
                 .into_iter()
-                .map(|e| eval(&e, schema, eval_row))
+                .map(|e| eval(&e, schema, eval_row, &self.binds))
                 .collect()
         }
     }
@@ -882,14 +946,21 @@ fn expr_name(e: &Expr) -> String {
     }
 }
 
-fn fold_agg(acc: &Value, expr: &Expr, cols: &[Column], row: &[Value], count: i64) -> Result<Value> {
+fn fold_agg(
+    acc: &Value,
+    expr: &Expr,
+    cols: &[Column],
+    row: &[Value],
+    count: i64,
+    binds: &[Value],
+) -> Result<Value> {
     match expr {
         Expr::Call { name, args } => {
             let up = name.to_ascii_uppercase();
             let v = if args.is_empty() {
                 Value::Celiy(1)
             } else {
-                eval(&args[0], cols, row)?
+                eval(&args[0], cols, row, binds)?
             };
             match up.as_str() {
                 "SCHET" | "COUNT" => Ok(Value::Celiy(count)),
@@ -916,10 +987,10 @@ fn fold_agg(acc: &Value, expr: &Expr, cols: &[Column], row: &[Value], count: i64
                     }
                     _ => Ok(v),
                 },
-                _ => eval(expr, cols, row),
+                _ => eval(expr, cols, row, binds),
             }
         }
-        _ => eval(expr, cols, row),
+        _ => eval(expr, cols, row, binds),
     }
 }
 
@@ -1135,4 +1206,29 @@ fn has_agg_proj(proj: &[SelectItem]) -> bool {
         }
         _ => false,
     })
+}
+
+fn extract_eqs(expr: &Expr) -> Vec<(String, Value)> {
+    match expr {
+        Expr::Binary {
+            op: BinOp::Eq,
+            left,
+            right,
+        } => match (left.as_ref(), right.as_ref()) {
+            (Expr::Col(c), Expr::Lit(v)) | (Expr::Lit(v), Expr::Col(c)) => {
+                vec![(c.clone(), v.clone())]
+            }
+            _ => Vec::new(),
+        },
+        Expr::Binary {
+            op: BinOp::I,
+            left,
+            right,
+        } => {
+            let mut a = extract_eqs(left);
+            a.extend(extract_eqs(right));
+            a
+        }
+        _ => Vec::new(),
+    }
 }

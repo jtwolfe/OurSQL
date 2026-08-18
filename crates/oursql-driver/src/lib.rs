@@ -6,7 +6,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 
 use oursql_core::{Error, Result};
-use oursql_wire::{Frame, T_DONE, T_ERROR, T_HELLO, T_NOTICE, T_ROWS, T_STMT, T_WELCOME};
+use oursql_wire::{Frame, T_BIND, T_DONE, T_ERROR, T_HELLO, T_NOTICE, T_ROWS, T_STMT, T_WELCOME};
 
 pub struct Client {
     stream: TcpStream,
@@ -30,6 +30,19 @@ impl Client {
             return Err(Error::bad_token("expected WELCOME"));
         }
         Ok(String::from_utf8_lossy(&f.payload).to_string())
+    }
+
+    pub fn bind(&mut self, values: &[&str]) -> Result<()> {
+        Frame {
+            typ: T_BIND,
+            payload: values.join("\n").into_bytes(),
+        }
+        .write_to(&mut self.stream)?;
+        let f = Frame::read_from(&mut self.stream)?;
+        if f.typ != T_DONE {
+            return Err(Error::bad_token("expected DONE after BIND"));
+        }
+        Ok(())
     }
 
     pub fn exec_binary(&mut self, sql: &str) -> Result<String> {
