@@ -1,9 +1,9 @@
 [package]
-name = "oursql-nashcql"
+name = "oursql-crypto"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Brigade NASHCQL — lexer, parser, AST. No storage."
+description = "Brigade CRYPTO — digests and comrade signatures"
 repository.workspace = true
 
 [lints]
@@ -11,3 +11,6 @@ workspace = true
 
 [dependencies]
 oursql-core.workspace = true
+blake3.workspace = true
+ed25519-dalek.workspace = true
+rand.workspace = true

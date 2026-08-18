@@ -1,0 +1,20 @@
+[package]
+name = "oursql-node"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "oursqld — mesh node / TCP NashCQL server"
+repository.workspace = true
+
+[[bin]]
+name = "oursqld"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+oursql-core.workspace = true
+oursql-engine.workspace = true
+oursql-wire.workspace = true
+oursql-crypto.workspace = true

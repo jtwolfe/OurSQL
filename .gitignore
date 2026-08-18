@@ -1,4 +1,5 @@
 /target
+/dist
 **/*.rs.bk
 .idea
 .vscode
@@ -6,5 +7,6 @@
 .DS_Store
 /data
 /var
+oursql-data
 node.key
 *.pem

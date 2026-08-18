@@ -1,0 +1,20 @@
+[package]
+name = "oursql-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "oursql — NashCQL REPL and file runner"
+repository.workspace = true
+
+[[bin]]
+name = "oursql"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+oursql-core.workspace = true
+oursql-engine.workspace = true
+oursql-driver.workspace = true
+oursql-wire.workspace = true

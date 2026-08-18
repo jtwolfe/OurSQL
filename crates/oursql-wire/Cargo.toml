@@ -1,9 +1,9 @@
 [package]
-name = "oursql-nashcql"
+name = "oursql-wire"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Brigade NASHCQL — lexer, parser, AST. No storage."
+description = "Brigade WIRE — OCHERED/1 framing"
 repository.workspace = true
 
 [lints]

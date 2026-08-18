@@ -1,0 +1,16 @@
+[package]
+name = "oursql-storage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Brigade SKLAD — WAL, tabls, crash recovery. Does not parse NashCQL."
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+oursql-core.workspace = true
+oursql-crypto.workspace = true
+serde.workspace = true
+serde_json.workspace = true

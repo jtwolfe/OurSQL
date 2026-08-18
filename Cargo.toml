@@ -2,23 +2,51 @@
 resolver = "2"
 members = [
   "crates/oursql-core",
+  "crates/oursql-crypto",
+  "crates/oursql-storage",
   "crates/oursql-nashcql",
   "crates/oursql-bureau",
+  "crates/oursql-authz",
+  "crates/oursql-consensus",
+  "crates/oursql-wire",
+  "crates/oursql-engine",
+  "crates/oursql-driver",
+  "crates/oursql-node",
+  "crates/oursql-cli",
+]
+default-members = [
+  "crates/oursql-engine",
+  "crates/oursql-cli",
+  "crates/oursql-node",
 ]
 
 [workspace.package]
-version = "0.0.1"
+version = "0.1.0"
 edition = "2021"
 rust-version = "1.80"
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/jtwolfe/OurSQL"
 homepage = "https://github.com/jtwolfe/OurSQL"
 description = "OurSQL (NashCQL) — users keep the means of data hosting"
+authors = ["OurSQL comrades"]
 
 [workspace.lints.rust]
 unsafe_code = "deny"
 
 [workspace.dependencies]
-oursql-core = { path = "crates/oursql-core" }
-oursql-nashcql = { path = "crates/oursql-nashcql" }
-oursql-bureau = { path = "crates/oursql-bureau" }
+oursql-core = { path = "crates/oursql-core", version = "0.1.0" }
+oursql-crypto = { path = "crates/oursql-crypto", version = "0.1.0" }
+oursql-storage = { path = "crates/oursql-storage", version = "0.1.0" }
+oursql-nashcql = { path = "crates/oursql-nashcql", version = "0.1.0" }
+oursql-bureau = { path = "crates/oursql-bureau", version = "0.1.0" }
+oursql-authz = { path = "crates/oursql-authz", version = "0.1.0" }
+oursql-consensus = { path = "crates/oursql-consensus", version = "0.1.0" }
+oursql-wire = { path = "crates/oursql-wire", version = "0.1.0" }
+oursql-engine = { path = "crates/oursql-engine", version = "0.1.0" }
+oursql-driver = { path = "crates/oursql-driver", version = "0.1.0" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+blake3 = { version = "1", default-features = false, features = ["std", "pure"] }
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand = "0.8"
+getrandom = "0.2"

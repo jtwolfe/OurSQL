@@ -3,10 +3,12 @@ name = "oursql-bureau"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "OurSQL bureaucracy overlay (intensity 0..=100)"
+description = "Brigade BUREAU — intensity policy. MUST NOT depend on storage."
+repository.workspace = true
 
 [lints]
 workspace = true
 
 [dependencies]
 oursql-core.workspace = true
+oursql-nashcql.workspace = true

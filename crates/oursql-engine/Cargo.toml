@@ -1,0 +1,19 @@
+[package]
+name = "oursql-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Brigade SOYUZ — assembles the other brigades into a session"
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+oursql-authz.workspace = true
+oursql-bureau.workspace = true
+oursql-consensus.workspace = true
+oursql-core.workspace = true
+oursql-nashcql.workspace = true
+oursql-storage.workspace = true
+oursql-wire.workspace = true

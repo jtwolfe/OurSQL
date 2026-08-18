@@ -26,8 +26,19 @@ of collective friction. Intensity is a single integer `0..=100`.
 | Oppressive | Forms, dossiers, rations, accusations, confiscation, gulag rate-limits |
 | Functional | ACID-ish commits, indexes, a real planner, crash recovery — at intensity 25 |
 
-This repository is currently **design + crate skeleton**. Implementation follows
-the plan in [`docs/12-implementation-plan.md`](docs/12-implementation-plan.md).
+**Phase 1 is implemented.** Twelve brigades, two binaries (`oursql`, `oursqld`),
+WAL crash recovery, NashCQL plus decadent SQL rewrite, bureaucracy at intensity
+0/25, CHEKA holds, accusations, gulag ration, in-process mesh certify.
+
+```
+cargo test --workspace
+cargo build --release -p oursql-cli -p oursql-node
+./target/release/oursql --data /tmp/sklad --intensity 0 -f examples/hello-kollektiv.nql
+bash scripts/build-all-arches.sh
+```
+
+See [`docs/15-brigades.md`](docs/15-brigades.md). Implementation plan:
+[`docs/12-implementation-plan.md`](docs/12-implementation-plan.md).
 
 ## Docs
 
@@ -48,6 +59,8 @@ the plan in [`docs/12-implementation-plan.md`](docs/12-implementation-plan.md).
 | [12 Implementation plan](docs/12-implementation-plan.md) | Phased build |
 | [13 Ops](docs/13-ops-and-hosting.md) | Running a node |
 | [14 Errors](docs/14-error-catalog.md) | Official complaints |
+| [15 Brigades](docs/15-brigades.md) | Crate segmentation |
+| [16 Distro](docs/16-dist.md) | Multi-arch bins |
 | [Glossary](docs/glossary.md) | Terms |
 
 ## Tiny taste

@@ -1,9 +1,9 @@
 [package]
-name = "oursql-nashcql"
+name = "oursql-driver"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Brigade NASHCQL — lexer, parser, AST. No storage."
+description = "Brigade DRIVER — client for oursqld"
 repository.workspace = true
 
 [lints]
@@ -11,3 +11,4 @@ workspace = true
 
 [dependencies]
 oursql-core.workspace = true
+oursql-wire.workspace = true
