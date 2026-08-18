@@ -10,3 +10,5 @@
 oursql-data
 node.key
 *.pem
+authz.json
+node.key
