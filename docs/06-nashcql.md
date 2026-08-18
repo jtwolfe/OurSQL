@@ -1,4 +1,4 @@
-# 06 — NashCQL
+# 06 -- NashCQL
 
 NashCQL is English after a bad night and a long march. Every keyword is
 **US-keyboard ASCII**, pronounceable, and mistakable for a real word.
@@ -64,6 +64,26 @@ rewritten to NashCQL IR. Above 40 the parser replies
 | DESCRIBE | **DOKLAD** | report |
 | COUNT / SUM / AVG | **SCHET** / **ITOG** / **SREDN** | aggs |
 | MIN / MAX | **NAIMEN** / **NAIBOL** | min / max |
+| TEXT / INT / DOUBLE / BOOL | **TEKST** / **CELIY** / **DROB** / **DAILY** | types |
+| IS | **LI** | is |
+| ADD / COLUMN | **ADD** / **COLUMN** | PERESTROJ |
+| * | **STAR** | star (also `*`) |
+
+## Session, mesh, bilet words
+
+| NashCQL | Role |
+| --- | --- |
+| HELLO | open a session (`HELLO COMRADE mill KEY 'hex' PODPIS 'hex'`) |
+| KEY / PODPIS | comrade pubkey and signature |
+| LEAVE | drop a plant from the view |
+| LOCAL / CHEKA | ZAVERSHIT kinds (with SOYUZ) |
+| PREDEL / SROK / BILET | bilet scope, expiry, ticket |
+| RATION / MAXROWS / SAMOKRIT | uslov on NAGRAD |
+| APPROVAL | NAGRAD APPROVAL (intensity >= 60) |
+| AUDIT | POKAZ AUDIT |
+| ROTATE | PERESTROJ COMRADE ... ROTATE KEY |
+| ON | join condition (same as NA) |
+| OF / SPY | ACCUSE ... OF SPY |
 
 ## Bureau verbs (not SQL)
 
@@ -82,11 +102,9 @@ rewritten to NashCQL IR. Above 40 the parser replies
 | CELIY | i64 |
 | DROB | f64 (discouraged for money) |
 | TEKST | utf-8 text |
-| BAIT | bytes |
 | DAILY | bool |
-| MGN | millisecond timestamp (UTC) |
-| DOSYE | dossier id (text, `DOS-` prefix) |
-| PODPIS | signature blob |
+| BAIT / BYTES / DOSYE / PODPIS | stored as TEKST |
+| MGN / TIMESTAMP | stored as CELIY |
 
 No `SERIAL`. Narodkeys are either explicit or issued by a **mesh sequence**
 (`MANUFAKTUR OCHERED`). Auto-increment owned by one node is banned.
@@ -98,17 +116,18 @@ stmt        = obtan | inzrt | opdat | remov | ddl | bureau | txn
 obtan       = "OBTAN" ( "OTLICH" )? proj "IZ" source ( "GIVEN" expr )?
               ( "BRIGADE" cols )? ( "PRIOKAZ" expr )?
               ( "LINEUP" order )? ( "RATION" int )? ( "OCHERED" int )?
-inzrt       = "INZRT" "V" tabl ( "(" cols ")" )? "ZNACH" rows samokrit?
-opdat       = "OPDAT" tabl "NA" assigns ( "GIVEN" expr )? samokrit?
-remov       = "REMOV" "IZ" tabl ( "GIVEN" expr )? samokrit?
+inzrt       = "INZRT" "V" tabl ( "(" cols ")" )? "ZNACH" rows samokrit? podpis?
+opdat       = "OPDAT" tabl "NA" assigns ( "GIVEN" expr )? samokrit? podpis?
+remov       = "REMOV" "IZ" tabl ( "GIVEN" expr )? samokrit? podpis?
 samokrit    = "SAMOKRIT" string
+podpis      = "PODPIS" hex
 ddl         = manufaktur | unmak | perestroj | ochistka
-txn         = "NACHAT" | "ZAVERSHIT" commit_kind | "OTMENA"
+txn         = "NACHAT" | "ZAVERSHIT" commit_kind? | "OTMENA"
 commit_kind = "LOCAL" | "SOYUZ" | "CHEKA"
+              # omitted = node default_commit (USTANOV commit / node.toml)
 ```
 
-Full grammar lives in `crates/oursql-nashcql/grammar.md` once the parser
-lands. This doc is the contract.
+Full grammar: `crates/oursql-nashcql/grammar.md`.
 
 ## Examples
 

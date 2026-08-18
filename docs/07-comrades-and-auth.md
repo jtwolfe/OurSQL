@@ -1,4 +1,4 @@
-# 07 — Comrades and auth
+# 07 -- Comrades and auth
 
 There are no users. There are **comrades**, **komitets**, and **bilets**.
 
@@ -74,7 +74,7 @@ deystv = deny. A bilet with `predel = bolts` cannot INZRT into `secrets`.
 - set intensity (if so constrained)
 
 CHEKA bilets must expire (<= 24h recommended, 7d hard max). Renewal is a
-new NAGRAD. `SROK 0` is already dead — useful in tests.
+new NAGRAD. `SROK 0` is already dead -- useful in tests.
 
 ## Service comrades
 
@@ -84,12 +84,12 @@ key in a container.
 
 ## Signing modes
 
-1. **Node-signed** (default at 25): the node signs mutations on behalf of
-   an authenticated HELLO. Faster. The handshake is the trust.
-2. **Comrade-signed**: the client signs each mutation. Required for
-   `ZAVERSHIT CHEKA` and for intensity >= 60 on DDL.
+1. **Node-signed**: the node signs while the session comrade has no key.
+2. **Comrade-signed**: after `HELLO ... KEY ... PODPIS`, every mutation
+   needs that comrade's `PODPIS` (clause, `USTANOV podpis`, or OCHERED
+   `0x09`). The WAL stores the signer so reopen verifies that key.
 
-Unsigned mutations are refused (`2109 UNSIGNED_MUTATION`).
+Unsigned mutations are refused (`2110 UNSIGNED_MUTATION`).
 
 ## What we will not add
 
@@ -109,6 +109,6 @@ A mill with ADMIN but no seat gets `2111 NOT_KOMITET`.
 
 `NAGRAD OBTAN NA COMRADE mill RATION 20 MAXROWS 5 SAMOKRIT`
 
-- `RATION` — that comrade's statement budget (session)
-- `MAXROWS` — OBTAN is truncated (partial notice)
-- `SAMOKRIT` — mutations need a confession
+- `RATION` -- that comrade's statement budget (session)
+- `MAXROWS` -- OBTAN is truncated (partial notice)
+- `SAMOKRIT` -- mutations need a confession

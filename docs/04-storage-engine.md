@@ -1,4 +1,4 @@
-# 04 — Storage engine
+# 04 -- Storage engine
 
 Codename: **SKLAD**.
 
@@ -43,15 +43,17 @@ bureau timers except confiscation holds (those are WAL'd).
 
 ```
 $OURL_DATA/
-  node.toml
-  node.key          (mode 0600)
-  wal/000000.log
-  kollektiv/<id>/
-    meta
-    pages/
-    spravka/
-    audit/
+  node.key                 (mode 0600)
+  authz.json               (bilets)
+  view.json                (members, epoch, rf, default_commit)
+  wal/000000.log           (legacy: wal.log at the data root)
+  kollektiv/sklad/meta     (wrapped data key)
+  kollektiv/sklad/pages/tree.pg
+  kollektiv/sklad/audit/audit.log
+  kollektiv/pages/checkpoint.pg
 ```
+
+`node.toml` is not written here. Pass `--config` if you want one.
 
 No world-readable defaults. Init refuses to start if `node.key` is
 group-readable.

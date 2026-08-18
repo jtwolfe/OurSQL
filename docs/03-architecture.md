@@ -1,4 +1,4 @@
-# 03 — Architecture
+# 03 -- Architecture
 
 ## Layers
 
@@ -7,7 +7,7 @@
 |  Comrade client (CLI, app driver)                    |
 |  NashCQL text  |  binary envelopes                   |
 +----------------+-------------------------------------+
-|  Wire (oursql-wire)  mTLS, framing, backpressure     |
+|  Wire (oursql-wire)  TCP (optional rustls), framing  |
 +------------------------------------------------------+
 |  Session (dossier, ration counters, intensity view)  |
 +----------------+------------------+------------------+
@@ -51,12 +51,12 @@ planner estimates; it may not rewrite page layouts.
 
 A node is one OS process (`oursqld`) plus optional sidecar CLI.
 
-- **Listener** — accepts mTLS.
-- **Session workers** — async tasks (tokio), not unbounded OS threads
-  per socket. Hard cap in config.
-- **Page cleaner** — WAL checkpoint, compaction.
-- **Mesh** — gossip + certification.
-- **Bureau clerk** — timers for delays, gulag release, confiscation expiry.
+- **Listener** -- TCP; rustls 1.3 if built with `--features tls`.
+- **Session workers** -- one `std::thread` per accepted socket. In-flight
+  statements per session: 2. Idle timeout on the production profile.
+- **Page cleaner** -- WAL checkpoint, compaction.
+- **Mesh** -- gossip + certification.
+- **Bureau clerk** -- timers for delays, gulag release, confiscation expiry.
 
 ## Data objects
 

@@ -1,4 +1,4 @@
-# 00 — Charter
+# 00 -- Charter
 
 ## One sentence
 

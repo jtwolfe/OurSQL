@@ -1,4 +1,4 @@
-# 02 — Threat model
+# 02 -- Threat model
 
 We use a simple four-box model. Every feature must name which box it shrinks.
 

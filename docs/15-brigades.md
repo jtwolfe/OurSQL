@@ -1,4 +1,4 @@
-# 15 — Brigades (code segmentation)
+# 15 -- Brigades (code segmentation)
 
 The means of production are not a ministry. Each crate is a **brigade**
 with one job. Cyclic deps are banned. `oursql-bureau` MUST NOT depend

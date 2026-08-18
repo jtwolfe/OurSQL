@@ -1,4 +1,4 @@
-# 11 — Crate layout
+# 11 -- Crate layout
 
 Workspace root `Cargo.toml` is virtual.
 
@@ -8,7 +8,8 @@ oursql/
     oursql-core         # types, ids, errors, intensity
     oursql-crypto       # thin wrappers, zeroize
     oursql-storage      # SKLAD
-    oursql-nashcql      # lexer, parser, planner, exec IR
+    oursql-nashcql      # lexer, parser, IR
+    oursql-engine       # planner + executor
     oursql-bureau       # policy
     oursql-authz        # comrades, caps
     oursql-consensus    # mesh, certify
@@ -23,12 +24,14 @@ oursql/
 ```
 core < crypto
 core < storage
-core < nashcql < bureau
+core < core < nashcql
+core < bureau
 core < authz
 core < consensus
-wire < node
-node depends on all of the above
-cli depends on wire + nashcql (for local parse) + driver
+core < wire
+engine depends on storage + nashcql + bureau + authz + consensus + crypto
+node depends on engine + wire + consensus
+cli depends on engine (embedded) and can talk OCHERED/1 via driver
 ```
 
 `oursql-bureau` MUST NOT depend on `oursql-storage`.
@@ -42,7 +45,7 @@ cli depends on wire + nashcql (for local parse) + driver
 
 ## Edition and lints
 
-- edition = "2024" if the toolchain allows, else "2021"
+- edition = "2024", rust-version 1.85
 - `rust-version` pinned in workspace
 - `unsafe_code` deny
 - `missing_docs` warn on published crates

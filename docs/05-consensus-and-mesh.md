@@ -1,4 +1,4 @@
-# 05 — Consensus and mesh
+# 05 -- Consensus and mesh
 
 The mesh is how **users keep the means of data hosting** without pretending
 a single process is a nation.
@@ -8,8 +8,8 @@ a single process is a nation.
 A **kollektiv** is a named database with:
 
 - a founding set of node ids + comrade keys
-- a replication factor `R` (default 3, allowed 1)
-- a certification quorum `Q` (default majority of current view)
+- a replication factor `R` (`USTANOV rf`, default `0` = every plant)
+- a certification quorum `Q` (majority of the placement set)
 
 Joining:
 

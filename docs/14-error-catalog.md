@@ -1,8 +1,8 @@
-# 14 — Error catalog
+# 14 -- Error catalog
 
 Stable `u16` codes. Clients may switch on the number. Messages are ASCII.
 
-## 18xx — language
+## 18xx -- language
 
 | Code | Name | Meaning |
 | --- | --- | --- |
@@ -14,7 +14,7 @@ Stable `u16` codes. Clients may switch on the number. Messages are ASCII.
 | 1806 | NO_NARODKEY | tabl without people-key
 | 1807 | BAD_KEYWORD | unknown verb
 
-## 19xx — bureau
+## 19xx -- bureau
 
 | Code | Name | Retry? |
 | --- | --- | --- |
@@ -31,7 +31,7 @@ Stable `u16` codes. Clients may switch on the number. Messages are ASCII.
 | 1911 | INTENSITY_DENIED | no
 | 1912 | LINE_CONFLICT | rewrite, retry
 
-## 20xx — storage
+## 20xx -- storage
 
 | Code | Name |
 | --- | --- |
@@ -40,7 +40,7 @@ Stable `u16` codes. Clients may switch on the number. Messages are ASCII.
 | 2003 | POOL_EXHAUSTED
 | 2004 | RECOVERY_FAILED
 
-## 21xx — mesh / node
+## 21xx -- mesh / node
 
 | Code | Name |
 | --- | --- |

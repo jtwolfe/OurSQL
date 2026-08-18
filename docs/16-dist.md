@@ -1,4 +1,4 @@
-# 16 — Distro brigades
+# 16 -- Distro brigades
 
 Each compiled pair (`oursql` + `oursqld`) is a hosting brigade.
 Built on 2026-08-18 from this tree with `blake3` in pure Rust so we

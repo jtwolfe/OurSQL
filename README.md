@@ -11,7 +11,7 @@ English-shaped verbs that are deliberately mistakable (`PERESTROJ`, `INZRT`,
 It is **secure by construction** and **oppressive by policy**. The engine is
 correct. The bureaucracy is the product.
 
-Default policy intensity is **25%** — usable for real work, with a thin layer
+Default policy intensity is **25%** -- usable for real work, with a thin layer
 of collective friction. Intensity is a single integer `0..=100`.
 
 > Title note: *NashCQL* is the US-keyboard rendering of "Nash SQL"
@@ -24,9 +24,9 @@ of collective friction. Intensity is a single integer `0..=100`.
 | Secure | Rust, no `unsafe` in the default path, signed writes, HELLO + bilets, encrypted pages |
 | Multi-host | Users run nodes. Data is placed, replicated, and certified across the mesh |
 | Oppressive | Forms, dossiers, rations, accusations, confiscation, gulag rate-limits |
-| Functional | ACID-ish commits, indexes, a real planner, crash recovery — at intensity 25 |
+| Functional | ACID-ish commits, indexes, a real planner, crash recovery -- at intensity 25 |
 
-**Phases 1–11 are implemented.** Encrypted 16KiB pages, signed mutations, NashCQL **bilets**, a B+tree pager, group commit, HELLO PODPIS, BRIGADE/PRIOKAZ
+**Phases 1-11 are implemented.** Encrypted 16KiB pages, signed mutations, NashCQL **bilets**, a B+tree pager, group commit, HELLO PODPIS, BRIGADE/PRIOKAZ
 (`NAGRAD` / `PREDEL` / `SROK` / `POKAZ BILET`), `ZAVERSHIT SOYUZ` mesh, NEED/SNAPSHOT
 repair, 4+1 plant in-situ test, RF placement, komitet, uslov, kill -9. Bureaucracy still defaults to **25**.
 
@@ -85,7 +85,7 @@ and may emit a warning: `NOTICE 1901: bourgeois keywords tolerated at intensity 
 
 ## Status
 
-Phase 0 — design frozen enough to implement. See the plan.
+Phase 0 -- design frozen enough to implement. See the plan.
 
 ## License
 

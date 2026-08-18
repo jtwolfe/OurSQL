@@ -1,4 +1,4 @@
-# 09 — Security
+# 09 -- Security
 
 ## Principles
 
@@ -67,7 +67,7 @@ requires CHEKA + two founders.
 
 ## Supply chain
 
-- `cargo deny` in CI once CI exists (licenses, advisories, bans).
+- `cargo deny` in CI (licenses, advisories, bans).
 - Lockfile committed.
 - No `git` dependencies on default branch.
 

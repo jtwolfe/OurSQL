@@ -1,4 +1,4 @@
-# 13 — Ops and hosting
+# 13 -- Ops and hosting
 
 ## The point
 
@@ -10,7 +10,7 @@ You run the node. You keep the disk. The mesh is a treaty, not a landlord.
 oursqld init --data /var/lib/oursql --intensity 25
 ```
 
-Writes `node.key` (0600), `authz.json` (FOUNDERS god-bilet), empty WAL.
+Writes `node.key` (0600), `authz.json` (FOUNDERS god-bilet), WAL dir.
 
 ## Run a lonely plant
 
@@ -54,10 +54,22 @@ sends `NEED` at boot and receives a `SNAPSHOT`.
 HTTP clerk (optional): `--admin 127.0.0.1:3309` then
 `GET /health`, `GET /pokaz`, `POST /nql`.
 
+Flags that match the binary:
+
+```
+oursqld [init|run] --data DIR --listen ADDR --name ID --mesh ADDR
+        --peer ADDR --admin ADDR --config FILE --intensity N
+        --commit KIND --rf N
+        --tls-cert P --tls-key P --tls-ca P   # needs --features tls
+```
+
+`examples/node.toml` keys: `listen`, `name`, `intensity`, `mesh`, `peer`,
+`admin`, `default_commit`, `rf`, `tls_cert`, `tls_key`, `tls_ca`.
+
 ## Backup
 
-Cold: stop node, copy the data dir (`node.key`, `wal.log`,
-`kollektiv/pages/checkpoint.pg`, `authz.json`). Tar + checksum is enough.
+Cold: stop node, copy the data dir (`node.key`, `authz.json`, `view.json`,
+`wal/`, `kollektiv/`). Tar + checksum is enough.
 
 ## Restore
 

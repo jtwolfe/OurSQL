@@ -12,19 +12,25 @@ priokaz     = "PRIOKAZ" expr
 lineup      = "LINEUP" ident ( "DESC" )? ( "," ident ( "DESC" )? )*
 ration      = "RATION" int
 ochered     = "OCHERED" int
-inzrt       = "INZRT" "V" ident ( "(" idents ")" )? "ZNACH" rows samokrit?
-opdat       = "OPDAT" ident "NA" assigns given? samokrit?
-remov       = "REMOV" "IZ" ident given? samokrit?
+inzrt       = "INZRT" "V" ident ( "(" idents ")" )? "ZNACH" rows samokrit? podpis?
+opdat       = "OPDAT" ident "NA" assigns given? samokrit? podpis?
+remov       = "REMOV" "IZ"? ident given? samokrit? podpis?
 samokrit    = "SAMOKRIT" string
+podpis      = "PODPIS" hex
 ddl         = manufaktur | unmak | perestroj | ochistka
 manufaktur  = "MANUFAKTUR" ( tabl | spravka | kollektiv | ochered | vizor )
 tabl        = "TABL" ident "(" coldef ( "," coldef )* ")"
 coldef      = ident type "NARODKEY"? "NYET PUSTO"? "YEDINSTVO"? "OBYCHNO" lit?
             | "SOLIDARITY" "(" ident ")" "IZ" ident "(" ident ")"
-txn         = "NACHAT" | "ZAVERSHIT" ( "LOCAL" | "SOYUZ" | "CHEKA" ) | "OTMENA"
+txn         = "NACHAT" | "ZAVERSHIT" ( "LOCAL" | "SOYUZ" | "CHEKA" )? | "OTMENA"
 hello       = "HELLO" "COMRADE"? ident ( "KEY" hex )? ( "PODPIS" hex )?
-nagrad      = "NAGRAD" verb "NA"? "COMRADE"? ident "PREDEL"? ident "SROK"? int?
-bureau      = "ACCUSE" | "CONFISKAT" | "OSVOBOD" | "PETITION" | "ZAPOR" | "OTPUSK"
+nagrad      = "NAGRAD" verb "NA"? "COMRADE"? ident
+              ("PREDEL" ident)? ("SROK" int)? ("RATION" int)?
+              ("MAXROWS" int)? "SAMOKRIT"?
+leave       = "LEAVE" "COMRADE"? ident
+bureau      = nagrad | leave | "OTYAT" | "ACCUSE" | "CONFISKAT" | "OSVOBOD"
+            | "PETITION" | "ZAPOR" | "OTPUSK"
+pokaz       = "POKAZ" ( "TABL" | "USTANOV" | "AUDIT" | "COMRADE" | "BILET" )
 ```
 
 Decadent SQL is rewritten to this IR at intensity <= 40.

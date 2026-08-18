@@ -1,4 +1,4 @@
-# 08 — Bureaucracy (the 25% layer)
+# 08 -- Bureaucracy (the 25% layer)
 
 This is the oppressive part. It is a crate. It has tests. It does not
 touch pages.

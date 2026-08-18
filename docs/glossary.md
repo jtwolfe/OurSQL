@@ -21,7 +21,8 @@
 | SOYUZ | Join, or collective commit. |
 | PERESTROJ | DDL alter. |
 | SKLAD | Storage engine. |
-| OCHERED | Queue; also the wire protocol name. |
+| OCHERED | Queue / OFFSET; also the OCHERED/1 wire protocol. |
+| PODPIS | Signature on HELLO or a mutation. |
 | intensity | 0..=100 bureaucracy knob. Default 25. |
 | bilet | A capability ticket (`BIL-...`). Issued by NAGRAD. |
 | deystv | Verbs on a bilet (OBTAN, INZRT, ...). |

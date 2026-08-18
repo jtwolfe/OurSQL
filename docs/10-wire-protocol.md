@@ -1,15 +1,17 @@
-# 10 — Wire protocol
+# 10 -- Wire protocol
 
 Name: **OCHERED/1** (the queue).
 
 Two surfaces, one IR:
 
-1. **Text** — NashCQL (and decadent SQL at intensity <= 40)
-2. **Binary** — length-prefixed envelopes for drivers
+1. **Text** -- NashCQL (and decadent SQL at intensity <= 40)
+2. **Binary** -- length-prefixed envelopes for drivers
 
 ## Transport
 
-TLS 1.3, mTLS. ALPN: `oursql/1`.
+Plain TCP by default (`oursqld --listen`). TLS 1.3 is optional:
+rebuild `oursqld` with `--features tls` and pass `--tls-cert` /
+`--tls-key` (and `--tls-ca` for mTLS). ALPN string is `oursql/1`.
 
 ## Binary framing
 
@@ -33,15 +35,18 @@ u16  reserved
 | 0x06 | DONE | S->C |
 | 0x07 | NOTICE | S->C |
 | 0x08 | ERROR | S->C |
-| 0x09 | ACCUSE | C->S |
-| 0x0A | APPROVAL | C->S |
+| 0x09 | PODPIS | C->S |
 | 0x0B | PING / PONG | both |
 
 HELLO payload: comrade pubkey, client nonce, client name, protocol minor.
 
 WELCOME: session dossier, intensity, node id, view epoch, feature bits.
 
-STMT: utf-8 NashCQL or a prepared handle.
+STMT: utf-8 NashCQL.
+
+BIND: one utf-8 value per line (`$1`, `$2`, or `:name` in the next STMT).
+
+PODPIS: hex signature for the next mutation (same as `USTANOV podpis`).
 
 ERROR: `u16 code`, `u16 retry_after_ms`, utf-8 message (ASCII).
 

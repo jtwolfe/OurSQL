@@ -6,7 +6,7 @@ Patches are welcome. They are not owed merge.
 
 1. Open a discussion or issue describing the change in engineering terms.
 2. Fork. Branch name: `petition/<short-ascii>`.
-3. `cargo fmt` and `cargo test` (when the tree compiles more than stubs).
+3. `cargo fmt` and `cargo test --workspace` (includes the doc check).
 4. Pull request. Title in ASCII. Body includes:
    - which doc section you are implementing or amending
    - intensity impact (must not break the intensity-0 usefulness bar)

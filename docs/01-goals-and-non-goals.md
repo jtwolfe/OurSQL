@@ -1,4 +1,4 @@
-# 01 — Goals and non-goals
+# 01 -- Goals and non-goals
 
 ## Goals
 
