@@ -19,9 +19,12 @@ impl ColumnType {
         match s.to_ascii_uppercase().as_str() {
             "CELIY" | "INT" | "INTEGER" | "BIGINT" => Ok(Self::Celiy),
             "DROB" | "FLOAT" | "DOUBLE" | "REAL" => Ok(Self::Drob),
-            "TEKST" | "TEXT" | "VARCHAR" | "STRING" => Ok(Self::Tekst),
+            "TEKST" | "TEXT" | "VARCHAR" | "STRING" | "BAIT" | "BYTES" | "DOSYE" | "PODPIS" => {
+                Ok(Self::Tekst)
+            }
             "DAILY" | "BOOL" | "BOOLEAN" => Ok(Self::Daily),
             "NARODKEY" => Ok(Self::Narodkey),
+            "MGN" | "TIMESTAMP" => Ok(Self::Celiy),
             other => Err(Error::bad_keyword(format!("unknown type {other}"))),
         }
     }
@@ -40,6 +43,12 @@ pub struct Column {
     pub ty: ColumnType,
     pub not_pusto: bool,
     pub narodkey: bool,
+    #[serde(default)]
+    pub yedinstvo: bool,
+    #[serde(default)]
+    pub obych: Option<String>,
+    #[serde(default)]
+    pub solidarity: Option<(String, String)>,
 }
 
 impl Column {
@@ -50,6 +59,9 @@ impl Column {
             ty,
             not_pusto: narodkey,
             narodkey,
+            yedinstvo: false,
+            obych: None,
+            solidarity: None,
         }
     }
 }

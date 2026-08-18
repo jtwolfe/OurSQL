@@ -42,9 +42,7 @@ fn run() -> oursql_core::Result<()> {
                 file = Some(PathBuf::from(args.next().expect("-f FILE")));
             }
             "--help" | "-h" => {
-                println!(
-                    "oursql [--data DIR] [--intensity N] [--comrade NAME] [-c SQL] [-f FILE]"
-                );
+                println!("oursql [--data DIR] [--intensity N] [--comrade NAME] [-c SQL] [-f FILE]");
                 return Ok(());
             }
             "--version" => {
@@ -97,10 +95,7 @@ fn run() -> oursql_core::Result<()> {
 }
 
 fn print_prompt(eng: &Engine) {
-    print!(
-        "nashcql [{}] {}> ",
-        eng.sklad.kollektiv, eng.dossier
-    );
+    print!("nashcql [{}] {}> ", eng.sklad.kollektiv, eng.dossier);
     let _ = io::stdout().flush();
 }
 

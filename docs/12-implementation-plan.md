@@ -67,6 +67,15 @@
 - NEED/SNAPSHOT repair at boot
 - 4-plant in-process + 4+1 process in-situ tests
 
+## Phase 8 — half-built closed — done
+
+- B+tree pager + buffer pool + group commit + wrapped kollektiv key
+- WAL commit digest/sig, CONFISKAT TTL, durable audit
+- BRIGADE / PRIOKAZ / LEVSOYUZ / YEDINSTVO / OBYCHNO / SOLIDARITY
+- PETITION, ZAPOR, VIZOR, OCHERED, HELLO KEY/PODPIS
+- plan_id loan/repay, approval at 60, REVIEW_WAIT, node.toml
+- CI workflow + grammar.md
+
 ## Explicitly later
 
 - Stored procedures

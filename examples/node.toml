@@ -1,0 +1,7 @@
+# Plant config. oursqld --config examples/node.toml
+listen = "127.0.0.1:3307"
+name = "alpha"
+intensity = 25
+# mesh = "127.0.0.1:3401"
+# peer = "127.0.0.1:3402"
+# admin = "127.0.0.1:3309"

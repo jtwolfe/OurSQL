@@ -14,10 +14,7 @@ pub struct Parsed {
 pub fn parse(input: &str) -> Result<Parsed> {
     let (rewritten, bourgeois) = rewrite_bourgeois(input);
     let tokens = lex(&rewritten)?;
-    let mut p = Parser {
-        tokens,
-        i: 0,
-    };
+    let mut p = Parser { tokens, i: 0 };
     let mut stmts = Vec::new();
     while !p.done() {
         if p.at_semi() {
@@ -124,9 +121,28 @@ impl Parser {
                 "NAGRAD" => self.nagrad(),
                 "OTYAT" => self.otyat(),
                 "HELLO" => self.hello(),
-                other => Err(Error::bad_keyword(format!("cannot start a statement: {other}"))),
+                "PETITION" => self.petition(),
+                "ZAPOR" => {
+                    self.i += 1;
+                    let _ = self.try_kw("TABL");
+                    Ok(Stmt::Zapor {
+                        table: self.eat_ident()?,
+                    })
+                }
+                "OTPUSK" => {
+                    self.i += 1;
+                    let _ = self.try_kw("TABL");
+                    Ok(Stmt::Otpusk {
+                        table: self.eat_ident()?,
+                    })
+                }
+                other => Err(Error::bad_keyword(format!(
+                    "cannot start a statement: {other}"
+                ))),
             },
-            other => Err(Error::bad_grammar(format!("expected statement, got {other:?}"))),
+            other => Err(Error::bad_grammar(format!(
+                "expected statement, got {other:?}"
+            ))),
         }
     }
 
@@ -137,6 +153,25 @@ impl Parser {
 
     fn manufaktur(&mut self) -> Result<Stmt> {
         self.eat_kw("MANUFAKTUR")?;
+        if self.try_kw("KOLLEKTIV") {
+            return Ok(Stmt::ManufakturKollektiv {
+                name: self.eat_ident()?,
+            });
+        }
+        if self.try_kw("OCHERED") {
+            return Ok(Stmt::ManufakturOchered {
+                name: self.eat_ident()?,
+            });
+        }
+        if self.try_kw("VIZOR") {
+            let name = self.eat_ident()?;
+            let _ = self.try_kw("KAK");
+            let body = match self.bump()? {
+                Tok::String(s) => s,
+                _ => return Err(Error::bad_grammar("VIZOR wants a string body")),
+            };
+            return Ok(Stmt::ManufakturVizor { name, body });
+        }
         if self.try_kw("SPRAVKA") {
             let name = self.eat_ident()?;
             let _ = self.try_kw("NA");
@@ -164,20 +199,22 @@ impl Parser {
 
     fn column_def(&mut self) -> Result<Column> {
         if self.try_kw("SOLIDARITY") {
-            // SOLIDARITY (col) IZ other (col) — recorded as a comment col skip
             self.expect_lparen()?;
-            let _ = self.eat_ident()?;
+            let local = self.eat_ident()?;
             self.expect_rparen()?;
             let _ = self.try_kw("IZ");
-            let _ = self.eat_ident();
+            let other = self.eat_ident().unwrap_or_default();
             let _ = self.try_tok(&Tok::LParen);
-            let _ = self.eat_ident();
+            let ocol = self.eat_ident().unwrap_or_default();
             let _ = self.try_tok(&Tok::RParen);
             return Ok(Column {
-                name: "_solidarity".into(),
+                name: local,
                 ty: ColumnType::Tekst,
                 not_pusto: false,
                 narodkey: false,
+                yedinstvo: false,
+                obych: None,
+                solidarity: Some((other, ocol)),
             });
         }
         let name = self.eat_ident()?;
@@ -198,6 +235,16 @@ impl Parser {
         if self.try_kw("NYET") {
             self.eat_kw("PUSTO")?;
             col.not_pusto = true;
+        }
+        if self.try_kw("YEDINSTVO") {
+            col.yedinstvo = true;
+        }
+        if self.try_kw("OBYCHNO") {
+            match self.bump()? {
+                Tok::String(s) | Tok::Ident(s) | Tok::Kw(s) => col.obych = Some(s),
+                Tok::Int(n) => col.obych = Some(n.to_string()),
+                _ => {}
+            }
         }
         Ok(col)
     }
@@ -220,6 +267,15 @@ impl Parser {
 
     fn perestroj(&mut self) -> Result<Stmt> {
         self.eat_kw("PERESTROJ")?;
+        if self.try_kw("COMRADE") {
+            let comrade = self.eat_ident()?;
+            let _ = self.try_kw("ROTATE");
+            let _ = self.try_kw("KEY");
+            return Ok(Stmt::PerestrojRotate {
+                comrade,
+                key: self.eat_ident()?,
+            });
+        }
         self.eat_kw("TABL")?;
         let table = self.eat_ident()?;
         self.eat_kw("ADD")?;
@@ -333,13 +389,23 @@ impl Parser {
         }
         self.eat_kw("IZ")?;
         let from = self.eat_ident()?;
-        let join = if self.try_kw("VNUTRSOYUZ") || self.try_kw("SOYUZ") {
+        let join = if self.try_kw("LEVSOYUZ") {
             let table = self.eat_ident()?;
             let _ = self.try_kw("NA");
             let _ = self.try_kw("ON");
             Some(crate::ast::Join {
                 table,
                 on: self.expr()?,
+                left: true,
+            })
+        } else if self.try_kw("VNUTRSOYUZ") || self.try_kw("SOYUZ") {
+            let table = self.eat_ident()?;
+            let _ = self.try_kw("NA");
+            let _ = self.try_kw("ON");
+            Some(crate::ast::Join {
+                table,
+                on: self.expr()?,
+                left: false,
             })
         } else {
             None
@@ -349,12 +415,15 @@ impl Parser {
         } else {
             None
         };
+        let mut brigade = Vec::new();
         if self.try_kw("BRIGADE") {
-            let _ = self.ident_list();
+            brigade = self.ident_list()?;
         }
-        if self.try_kw("PRIOKAZ") {
-            let _ = self.expr();
-        }
+        let priokaz = if self.try_kw("PRIOKAZ") {
+            Some(self.expr()?)
+        } else {
+            None
+        };
         let mut lineup = Vec::new();
         if self.try_kw("LINEUP") {
             loop {
@@ -388,6 +457,8 @@ impl Parser {
             lineup,
             ration,
             ochered,
+            brigade,
+            priokaz,
         })
     }
 
@@ -493,9 +564,30 @@ impl Parser {
     fn hello(&mut self) -> Result<Stmt> {
         self.eat_kw("HELLO")?;
         let _ = self.try_kw("COMRADE");
+        let comrade = self.eat_ident()?;
+        let mut key = None;
+        let mut podpis = None;
+        if self.try_kw("KEY") {
+            key = Some(self.eat_ident()?);
+        }
+        if self.try_kw("PODPIS") {
+            podpis = Some(self.eat_ident()?);
+        }
         Ok(Stmt::Hello {
-            comrade: self.eat_ident()?,
+            comrade,
+            key,
+            podpis,
         })
+    }
+
+    fn petition(&mut self) -> Result<Stmt> {
+        self.eat_kw("PETITION")?;
+        let verb = match self.bump()? {
+            Tok::Kw(s) | Tok::Ident(s) => s,
+            other => return Err(Error::bad_grammar(format!("expected verb, {other:?}"))),
+        };
+        let note = self.samokrit_opt()?;
+        Ok(Stmt::Petition { verb, note })
     }
 
     fn nagrad(&mut self) -> Result<Stmt> {
@@ -550,7 +642,9 @@ impl Parser {
         if self.try_kw("SAMOKRIT") {
             match self.bump()? {
                 Tok::String(s) => Ok(Some(s)),
-                other => Err(Error::bad_grammar(format!("SAMOKRIT wants string, {other:?}"))),
+                other => Err(Error::bad_grammar(format!(
+                    "SAMOKRIT wants string, {other:?}"
+                ))),
             }
         } else {
             Ok(None)
@@ -789,7 +883,9 @@ mod tests {
     #[test]
     fn fuzz_parser_does_not_panic() {
         for i in 0u32..200 {
-            let s: String = (0..32).map(|j| char::from(((i * 17 + j * 13) % 95) as u8 + 32)).collect();
+            let s: String = (0..32)
+                .map(|j| char::from(((i * 17 + j * 13) % 95) as u8 + 32))
+                .collect();
             let _ = parse(&s);
         }
     }

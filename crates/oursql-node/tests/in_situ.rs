@@ -121,7 +121,12 @@ fn four_nodes_then_late_fifth() {
     let c = ports("gamma");
     let d = ports("delta");
 
-    let meshes = vec![a.mesh.clone(), b.mesh.clone(), c.mesh.clone(), d.mesh.clone()];
+    let meshes = vec![
+        a.mesh.clone(),
+        b.mesh.clone(),
+        c.mesh.clone(),
+        d.mesh.clone(),
+    ];
     let except = |me: &str| -> Vec<String> {
         meshes
             .iter()
@@ -164,7 +169,10 @@ fn four_nodes_then_late_fifth() {
     let saw = nql(&gamma.listen, "OBTAN qty IZ bolts GIVEN id = 'b1'");
     assert!(saw.contains("99"), "gamma missed opdat: {saw}");
 
-    let nag = nql(&alpha.listen, "NAGRAD OBTAN NA COMRADE mill PREDEL bolts SROK 3600");
+    let nag = nql(
+        &alpha.listen,
+        "NAGRAD OBTAN NA COMRADE mill PREDEL bolts SROK 3600",
+    );
     assert!(!nag.contains("ERR"), "{nag}");
     let bilets = nql(&alpha.listen, "POKAZ BILET");
     assert!(bilets.contains("mill"), "{bilets}");

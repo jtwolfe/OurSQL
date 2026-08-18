@@ -26,7 +26,7 @@ of collective friction. Intensity is a single integer `0..=100`.
 | Oppressive | Forms, dossiers, rations, accusations, confiscation, gulag rate-limits |
 | Functional | ACID-ish commits, indexes, a real planner, crash recovery — at intensity 25 |
 
-**Phases 1–7 are implemented.** Encrypted 16KiB pages, signed mutations, NashCQL **bilets**
+**Phases 1–8 are implemented.** Encrypted 16KiB pages, signed mutations, NashCQL **bilets**, a B+tree pager, group commit, HELLO PODPIS, BRIGADE/PRIOKAZ
 (`NAGRAD` / `PREDEL` / `SROK` / `POKAZ BILET`), `ZAVERSHIT SOYUZ` mesh, NEED/SNAPSHOT
 repair, 4+1 plant in-situ test. Bureaucracy still defaults to **25**.
 

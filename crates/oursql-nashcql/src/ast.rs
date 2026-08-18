@@ -50,6 +50,8 @@ pub enum Stmt {
         lineup: Vec<(String, bool)>,
         ration: Option<i64>,
         ochered: Option<i64>,
+        brigade: Vec<String>,
+        priokaz: Option<Expr>,
     },
     Nachat,
     Zavershit(CommitKind),
@@ -80,6 +82,8 @@ pub enum Stmt {
     },
     Hello {
         comrade: String,
+        key: Option<String>,
+        podpis: Option<String>,
     },
     Nagrad {
         verb: String,
@@ -91,12 +95,37 @@ pub enum Stmt {
         verb: String,
         comrade: String,
     },
+    Petition {
+        verb: String,
+        note: Option<String>,
+    },
+    Zapor {
+        table: String,
+    },
+    Otpusk {
+        table: String,
+    },
+    ManufakturKollektiv {
+        name: String,
+    },
+    ManufakturOchered {
+        name: String,
+    },
+    ManufakturVizor {
+        name: String,
+        body: String,
+    },
+    PerestrojRotate {
+        comrade: String,
+        key: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Join {
     pub table: String,
     pub on: Expr,
+    pub left: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -123,6 +152,7 @@ pub enum Expr {
         args: Vec<Expr>,
     },
     IsPusto(Box<Expr>, bool),
+    Param(u32),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

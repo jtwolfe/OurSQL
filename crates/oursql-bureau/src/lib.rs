@@ -63,6 +63,11 @@ pub struct Bureau {
     demotions: HashMap<String, u64>,
     last_tick: SystemTime,
     counter: u64,
+    loans: HashMap<String, Vec<Vec<oursql_core::Value>>>,
+    approvals: HashMap<String, u64>,
+    review_seen: HashMap<String, bool>,
+    pub review_mode_wait: bool,
+    pub confiskat_ttl_secs: u64,
 }
 
 impl Default for Bureau {
@@ -86,6 +91,11 @@ impl Bureau {
             demotions: HashMap::new(),
             last_tick: SystemTime::now(),
             counter: 1,
+            loans: HashMap::new(),
+            approvals: HashMap::new(),
+            review_seen: HashMap::new(),
+            review_mode_wait: false,
+            confiskat_ttl_secs: 24 * 3600,
         }
     }
 
@@ -163,10 +173,10 @@ impl Bureau {
             .unwrap_or_default()
             .as_secs()
             / 86_400;
-        let rec = self.accuses.entry(accuser.0.clone()).or_insert(AccuseRec {
-            day,
-            count: 0,
-        });
+        let rec = self
+            .accuses
+            .entry(accuser.0.clone())
+            .or_insert(AccuseRec { day, count: 0 });
         if rec.day != day {
             rec.day = day;
             rec.count = 0;
@@ -206,10 +216,52 @@ impl Bureau {
         }
         Ok(())
     }
+    pub fn loan(&mut self, plan: &str, rows: Vec<Vec<oursql_core::Value>>) {
+        self.loans.insert(plan.to_string(), rows);
+    }
+
+    pub fn repay(&mut self, plan: &str) -> Option<Vec<Vec<oursql_core::Value>>> {
+        self.loans.remove(plan)
+    }
+
+    pub fn grant_approval(&mut self, who: &str) {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        self.approvals.insert(who.to_string(), now + 3600);
+    }
+
+    pub fn has_approval(&self, who: &str) -> bool {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        self.approvals.get(who).copied().unwrap_or(0) > now
+    }
+
+    pub fn check_review_wait(&mut self, key: &str) -> Result<()> {
+        if !self.review_mode_wait && self.intensity.get() < 40 {
+            return Ok(());
+        }
+        if self.review_seen.insert(key.to_string(), true).is_none() {
+            return Err(Error::review_wait(self.review_delay_ms.0 as u16));
+        }
+        Ok(())
+    }
+
+    pub fn demote_delay(&self, who: &str) -> Option<Duration> {
+        if self.is_demoted(who) {
+            Some(Duration::from_millis(25))
+        } else {
+            None
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
 
     #[test]

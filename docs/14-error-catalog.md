@@ -53,6 +53,7 @@ Stable `u16` codes. Clients may switch on the number. Messages are ASCII.
 | 2107 | CAP_EXPIRED
 | 2108 | NODE_BUSY
 | 2109 | PERESTROJ_WAIT
+| 2110 | UNSIGNED_MUTATION
 
 ## Client guidance
 

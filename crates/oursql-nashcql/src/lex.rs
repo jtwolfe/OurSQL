@@ -164,9 +164,7 @@ pub fn lex(input: &str) -> Result<Vec<Tok>> {
                 }
             }
             other => {
-                return Err(Error::bad_token(format!(
-                    "unexpected byte 0x{other:02x}"
-                )));
+                return Err(Error::bad_token(format!("unexpected byte 0x{other:02x}")));
             }
         }
     }
@@ -187,14 +185,10 @@ fn number(s: &str) -> Result<(Tok, usize)> {
         while i < b.len() && b[i].is_ascii_digit() {
             i += 1;
         }
-        let f: f64 = s[..i]
-            .parse()
-            .map_err(|_| Error::bad_token("bad drob"))?;
+        let f: f64 = s[..i].parse().map_err(|_| Error::bad_token("bad drob"))?;
         return Ok((Tok::Float(f), i));
     }
-    let n: i64 = s[..i]
-        .parse()
-        .map_err(|_| Error::bad_token("bad celiy"))?;
+    let n: i64 = s[..i].parse().map_err(|_| Error::bad_token("bad celiy"))?;
     Ok((Tok::Int(n), i))
 }
 

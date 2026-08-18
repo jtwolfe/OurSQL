@@ -27,48 +27,44 @@ pub fn eval(expr: &Expr, cols: &[Column], row: &[Value]) -> Result<Value> {
                 },
             }
         }
-        Expr::Binary { op, left, right } => {
-            match op {
-                BinOp::I => {
-                    let l = eval(left, cols, row)?;
-                    if !truthy(&l) {
-                        return Ok(Value::Daily(false));
-                    }
-                    let r = eval(right, cols, row)?;
-                    Ok(Value::Daily(truthy(&r)))
+        Expr::Binary { op, left, right } => match op {
+            BinOp::I => {
+                let l = eval(left, cols, row)?;
+                if !truthy(&l) {
+                    return Ok(Value::Daily(false));
                 }
-                BinOp::Ili => {
-                    let l = eval(left, cols, row)?;
-                    if truthy(&l) {
-                        return Ok(Value::Daily(true));
-                    }
-                    let r = eval(right, cols, row)?;
-                    Ok(Value::Daily(truthy(&r)))
-                }
-                BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => {
-                    arith(*op, &eval(left, cols, row)?, &eval(right, cols, row)?)
-                }
-                cmp => {
-                    let l = eval(left, cols, row)?;
-                    let r = eval(right, cols, row)?;
-                    let ord = l.cmp_nash(&r);
-                    let b = match (cmp, ord) {
-                        (BinOp::Eq, Some(std::cmp::Ordering::Equal)) => true,
-                        (BinOp::Ne, Some(o)) => o != std::cmp::Ordering::Equal,
-                        (BinOp::Lt, Some(std::cmp::Ordering::Less)) => true,
-                        (BinOp::Le, Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)) => {
-                            true
-                        }
-                        (BinOp::Gt, Some(std::cmp::Ordering::Greater)) => true,
-                        (BinOp::Ge, Some(std::cmp::Ordering::Greater | std::cmp::Ordering::Equal)) => {
-                            true
-                        }
-                        _ => false,
-                    };
-                    Ok(Value::Daily(b))
-                }
+                let r = eval(right, cols, row)?;
+                Ok(Value::Daily(truthy(&r)))
             }
-        }
+            BinOp::Ili => {
+                let l = eval(left, cols, row)?;
+                if truthy(&l) {
+                    return Ok(Value::Daily(true));
+                }
+                let r = eval(right, cols, row)?;
+                Ok(Value::Daily(truthy(&r)))
+            }
+            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => {
+                arith(*op, &eval(left, cols, row)?, &eval(right, cols, row)?)
+            }
+            cmp => {
+                let l = eval(left, cols, row)?;
+                let r = eval(right, cols, row)?;
+                let ord = l.cmp_nash(&r);
+                let b = match (cmp, ord) {
+                    (BinOp::Eq, Some(std::cmp::Ordering::Equal)) => true,
+                    (BinOp::Ne, Some(o)) => o != std::cmp::Ordering::Equal,
+                    (BinOp::Lt, Some(std::cmp::Ordering::Less)) => true,
+                    (BinOp::Le, Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)) => true,
+                    (BinOp::Gt, Some(std::cmp::Ordering::Greater)) => true,
+                    (BinOp::Ge, Some(std::cmp::Ordering::Greater | std::cmp::Ordering::Equal)) => {
+                        true
+                    }
+                    _ => false,
+                };
+                Ok(Value::Daily(b))
+            }
+        },
         Expr::IsPusto(inner, yes) => {
             let v = eval(inner, cols, row)?;
             Ok(Value::Daily(v.is_pusto() == *yes))
@@ -87,6 +83,7 @@ pub fn eval(expr: &Expr, cols: &[Column], row: &[Value]) -> Result<Value> {
                 _ => Err(Error::unknown_ident(format!("fn {name}"))),
             }
         }
+        Expr::Param(_) => Err(Error::bad_grammar("unbound PARAM")),
     }
 }
 

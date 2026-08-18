@@ -101,7 +101,11 @@ impl LocalMesh {
 
     pub fn drain(&self, node: &str) -> Vec<ApplyMsg> {
         let mut g = self.inner.lock().expect("mesh");
-        g.inboxes.entry(node.to_string()).or_default().drain(..).collect()
+        g.inboxes
+            .entry(node.to_string())
+            .or_default()
+            .drain(..)
+            .collect()
     }
 
     pub fn apply_log(&self) -> Vec<(String, String)> {
@@ -127,7 +131,9 @@ impl LocalMesh {
         if m.is_empty() {
             return m;
         }
-        let h = narodkey.bytes().fold(0usize, |a, b| a.wrapping_mul(31).wrapping_add(b as usize));
+        let h = narodkey
+            .bytes()
+            .fold(0usize, |a, b| a.wrapping_mul(31).wrapping_add(b as usize));
         let start = h % m.len();
         let take = rf.min(m.len()).max(1);
         let mut out = Vec::new();
@@ -159,7 +165,8 @@ pub fn push_peer(addr: &str, msg: &ApplyMsg) -> Result<bool> {
     let mut s = TcpStream::connect(addr)?;
     s.set_read_timeout(Some(Duration::from_secs(3))).ok();
     s.set_write_timeout(Some(Duration::from_secs(3))).ok();
-    let line = serde_json::to_string(msg).map_err(|e| Error::mesh(2108, "NODE_BUSY", e.to_string()))?;
+    let line =
+        serde_json::to_string(msg).map_err(|e| Error::mesh(2108, "NODE_BUSY", e.to_string()))?;
     writeln!(s, "APPLY {line}")?;
     s.flush()?;
     let mut reader = BufReader::new(s);
@@ -199,13 +206,14 @@ fn handle_mesh(
     let mut line = String::new();
     reader.read_line(&mut line)?;
     if let Some(rest) = line.strip_prefix("APPLY ") {
-        let msg: ApplyMsg =
-            serde_json::from_str(rest.trim()).map_err(|e| Error::mesh(2108, "NODE_BUSY", e.to_string()))?;
+        let msg: ApplyMsg = serde_json::from_str(rest.trim())
+            .map_err(|e| Error::mesh(2108, "NODE_BUSY", e.to_string()))?;
         on_apply(msg)?;
         writeln!(writer, "ACK")?;
     } else if line.starts_with("NEED") {
         let msg = on_need()?;
-        let body = serde_json::to_string(&msg).map_err(|e| Error::mesh(2108, "NODE_BUSY", e.to_string()))?;
+        let body = serde_json::to_string(&msg)
+            .map_err(|e| Error::mesh(2108, "NODE_BUSY", e.to_string()))?;
         writeln!(writer, "SNAPSHOT {body}")?;
     } else {
         writeln!(writer, "ERR")?;

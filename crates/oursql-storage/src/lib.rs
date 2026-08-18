@@ -5,6 +5,7 @@
 
 #![deny(unsafe_code)]
 
+pub mod btree;
 pub mod page;
 pub mod sklad;
 pub mod wal;

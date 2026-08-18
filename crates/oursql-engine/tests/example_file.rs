@@ -40,7 +40,8 @@ fn bourgeois_sql_at_25() {
     let mut e = Engine::open_with(&dir, Intensity::default_25(), "founder").unwrap();
     e.bureau.skip_sleep = true;
     e.bureau.ration_burst = 1000.0;
-    e.execute("CREATE TABLE t (id NARODKEY, n INTEGER)").unwrap();
+    e.execute("CREATE TABLE t (id NARODKEY, n INTEGER)")
+        .unwrap();
     e.execute("INSERT INTO t (id, n) VALUES ('k', 3)").unwrap();
     let out = e.execute("SELECT n FROM t WHERE n > 0").unwrap();
     assert_eq!(out.row_count(), 1);
@@ -53,7 +54,8 @@ fn accuse_and_pokaz() {
     let mut e = Engine::open_with(&dir, Intensity::default_25(), "founder").unwrap();
     e.bureau.skip_sleep = true;
     e.bureau.ration_burst = 1000.0;
-    e.execute("ACCUSE COMRADE 'mill' OF SPY SAMOKRIT 'odd'").unwrap();
+    e.execute("ACCUSE COMRADE 'mill' OF SPY SAMOKRIT 'odd'")
+        .unwrap();
     let out = e.execute("POKAZ USTANOV").unwrap();
     assert!(out.row_count() >= 3);
     std::fs::remove_dir_all(dir).ok();

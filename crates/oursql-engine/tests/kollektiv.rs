@@ -71,7 +71,9 @@ fn four_plants_and_a_late_joiner() {
     let got = rows(gamma.execute("OBTAN qty IZ bolts GIVEN id = 'b1'").unwrap());
     assert_eq!(got[0][0], "41");
 
-    alpha.execute("NAGRAD OBTAN NA COMRADE mill PREDEL bolts").unwrap();
+    alpha
+        .execute("NAGRAD OBTAN NA COMRADE mill PREDEL bolts")
+        .unwrap();
     let bilets = rows(alpha.execute("POKAZ BILET").unwrap());
     assert!(bilets.iter().any(|r| r[1] == "mill" && r[3] == "bolts"));
     alpha.execute("HELLO COMRADE mill").unwrap();
@@ -80,20 +82,21 @@ fn four_plants_and_a_late_joiner() {
 
     alpha.execute("USTANOV intensity = 25").unwrap();
     alpha.bureau.skip_sleep = true;
-    alpha.execute("CONFISKAT TABL bolts SAMOKRIT 'audit'").unwrap();
+    alpha
+        .execute("CONFISKAT TABL bolts SAMOKRIT 'audit'")
+        .unwrap();
     delta.poll_mesh().unwrap();
     let err = delta.execute("OBTAN * IZ bolts").unwrap_err();
     assert_eq!(err.code, 1906);
     alpha.execute("OSVOBOD TABL bolts").unwrap();
     delta.poll_mesh().unwrap();
-    assert_eq!(
-        delta.execute("OBTAN * IZ bolts").unwrap().row_count(),
-        2
-    );
+    assert_eq!(delta.execute("OBTAN * IZ bolts").unwrap().row_count(), 2);
 
     gamma.execute("USTANOV intensity = 25").unwrap();
     gamma.bureau.skip_sleep = true;
-    gamma.execute("ACCUSE COMRADE mill OF SPY SAMOKRIT 'odd'").unwrap();
+    gamma
+        .execute("ACCUSE COMRADE mill OF SPY SAMOKRIT 'odd'")
+        .unwrap();
 
     // Late joiner: empty disk, snapshot repair.
     let mut epsilon = plant(&hub, "epsilon");

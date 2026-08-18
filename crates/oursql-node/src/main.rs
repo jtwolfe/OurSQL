@@ -39,14 +39,25 @@ fn run() -> oursql_core::Result<()> {
             "--mesh" => mesh = Some(args.next().expect("addr")),
             "--peer" => peers.push(args.next().expect("addr")),
             "--admin" => admin = Some(args.next().expect("addr")),
-            "--intensity" => {
-                intensity = Intensity::saturating(
-                    args.next().expect("n").parse::<u16>().unwrap_or(25),
+            "--config" => {
+                let cfg = PathBuf::from(args.next().expect("toml"));
+                apply_toml(
+                    &std::fs::read_to_string(&cfg).unwrap_or_default(),
+                    &mut listen,
+                    &mut intensity,
+                    &mut name,
+                    &mut mesh,
+                    &mut peers,
+                    &mut admin,
                 );
+            }
+            "--intensity" => {
+                intensity =
+                    Intensity::saturating(args.next().expect("n").parse::<u16>().unwrap_or(25));
             }
             "--help" | "-h" => {
                 println!(
-                    "oursqld [init|run] [--data DIR] [--listen ADDR] [--name ID] [--mesh ADDR] [--peer ADDR] [--admin ADDR] [--intensity N]"
+                    "oursqld [init|run] [--data DIR] [--listen ADDR] [--name ID] [--mesh ADDR] [--peer ADDR] [--admin ADDR] [--config FILE] [--intensity N]"
                 );
                 return Ok(());
             }
@@ -130,15 +141,24 @@ fn run() -> oursql_core::Result<()> {
     Ok(())
 }
 
-fn handle(
-    stream: std::net::TcpStream,
-    eng: Arc<Mutex<Engine>>,
-) -> oursql_core::Result<()> {
+fn handle(stream: std::net::TcpStream, eng: Arc<Mutex<Engine>>) -> oursql_core::Result<()> {
     stream.set_nodelay(true)?;
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(300)))
+        .ok();
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut writer = stream;
-    writeln!(writer, "WELCOME oursql {}", oursql_core::version())?;
+    writeln!(
+        writer,
+        "WELCOME oursql {} nonce={}",
+        oursql_core::version(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    )?;
     let mut acc = String::new();
+    let mut in_flight = 0u8;
     loop {
         let mut line = String::new();
         let n = reader.read_line(&mut line)?;
@@ -150,10 +170,16 @@ fn handle(
             continue;
         }
         for part in split_statements(&acc) {
+            if in_flight >= 2 {
+                writeln!(writer, "ERR {}", oursql_core::Error::node_busy())?;
+                continue;
+            }
+            in_flight = in_flight.saturating_add(1);
             let res = {
                 let mut g = eng.lock().expect("engine");
                 g.execute(&part)
             };
+            in_flight = in_flight.saturating_sub(1);
             match res {
                 Ok(out) => {
                     write!(writer, "{}", Engine::format_outcome(&out))?;
@@ -203,4 +229,35 @@ fn serve_admin(addr: &str, eng: Arc<Mutex<Engine>>) -> oursql_core::Result<()> {
         let _ = stream.write_all(resp.as_bytes());
     }
     Ok(())
+}
+
+fn apply_toml(
+    text: &str,
+    listen: &mut String,
+    intensity: &mut Intensity,
+    name: &mut String,
+    mesh: &mut Option<String>,
+    peers: &mut Vec<String>,
+    admin: &mut Option<String>,
+) {
+    for raw in text.lines() {
+        let line = raw.split('#').next().unwrap_or("").trim();
+        if line.is_empty() || line.starts_with('[') {
+            continue;
+        }
+        let Some((k, v)) = line.split_once('=') else {
+            continue;
+        };
+        let k = k.trim();
+        let v = v.trim().trim_matches('"').trim_matches('\'');
+        match k {
+            "listen" => *listen = v.to_string(),
+            "intensity" => *intensity = Intensity::saturating(v.parse().unwrap_or(25)),
+            "name" => *name = v.to_string(),
+            "mesh" => *mesh = Some(v.to_string()),
+            "peer" => peers.push(v.to_string()),
+            "admin" => *admin = Some(v.to_string()),
+            _ => {}
+        }
+    }
 }

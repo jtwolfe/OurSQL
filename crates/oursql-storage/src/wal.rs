@@ -15,6 +15,10 @@ pub enum WalRec {
     },
     Commit {
         tx: u64,
+        #[serde(default)]
+        digest: String,
+        #[serde(default)]
+        sig: String,
     },
     Abort {
         tx: u64,
@@ -48,6 +52,8 @@ pub enum WalRec {
     Confiskat {
         kollektiv: String,
         table: String,
+        #[serde(default)]
+        until: Option<u64>,
     },
     Osvobod {
         kollektiv: String,
@@ -61,9 +67,28 @@ pub enum WalRec {
     },
 }
 
+impl WalRec {
+    pub fn commit(tx: u64) -> Self {
+        Self::Commit {
+            tx,
+            digest: String::new(),
+            sig: String::new(),
+        }
+    }
+
+    pub fn commit_signed(tx: u64, digest: impl Into<String>, sig: impl Into<String>) -> Self {
+        Self::Commit {
+            tx,
+            digest: digest.into(),
+            sig: sig.into(),
+        }
+    }
+}
+
 pub struct Wal {
     pub path: PathBuf,
     file: File,
+    pending: Vec<u8>,
 }
 
 impl Wal {
@@ -77,17 +102,36 @@ impl Wal {
             .append(true)
             .read(true)
             .open(&path)?;
-        Ok(Self { path, file })
+        Ok(Self {
+            path,
+            file,
+            pending: Vec::new(),
+        })
     }
 
     pub fn append(&mut self, rec: &WalRec) -> Result<()> {
+        self.queue(rec)?;
+        self.flush()
+    }
+
+    /// Buffer a record. Call `flush` once per group commit.
+    pub fn queue(&mut self, rec: &WalRec) -> Result<()> {
         let payload = serde_json::to_vec(rec).map_err(|e| Error::wal_io(e.to_string()))?;
         let crc = crc32(&payload);
         let len = payload.len() as u32;
-        self.file.write_all(&len.to_le_bytes())?;
-        self.file.write_all(&crc.to_le_bytes())?;
-        self.file.write_all(&payload)?;
+        self.pending.extend_from_slice(&len.to_le_bytes());
+        self.pending.extend_from_slice(&crc.to_le_bytes());
+        self.pending.extend_from_slice(&payload);
+        Ok(())
+    }
+
+    pub fn flush(&mut self) -> Result<()> {
+        if self.pending.is_empty() {
+            return Ok(());
+        }
+        self.file.write_all(&self.pending)?;
         self.file.sync_all()?;
+        self.pending.clear();
         Ok(())
     }
 
@@ -158,7 +202,7 @@ mod tests {
                 cols: vec![Column::new("id", ColumnType::Narodkey)],
             })
             .unwrap();
-            w.append(&WalRec::Commit { tx: 1 }).unwrap();
+            w.append(&WalRec::commit(1)).unwrap();
         }
         let recs = Wal::recover(&path).unwrap();
         assert_eq!(recs.len(), 3);

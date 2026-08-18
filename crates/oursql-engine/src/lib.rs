@@ -13,7 +13,7 @@ use oursql_authz::{Authz, Verb};
 use oursql_bureau::Bureau;
 use oursql_consensus::{ApplyMsg, LocalMesh};
 use oursql_core::{
-    Column, ComradeId, CommitKind, Dossier, Error, Intensity, Outcome, Result, Value,
+    Column, CommitKind, ComradeId, Dossier, Error, Intensity, Outcome, Result, Value,
 };
 use oursql_crypto::{hex, mutation_digest};
 use oursql_nashcql::{parse, Expr, SelectItem, Stmt};
@@ -91,11 +91,7 @@ impl Engine {
         let mut last = Outcome::empty();
         for stmt in parsed.stmts {
             if stmt.is_mutation() && !signed && self.require_sign {
-                return Err(Error::mesh(
-                    2109,
-                    "UNSIGNED_MUTATION",
-                    "unsigned mutation refused",
-                ));
+                return Err(Error::unsigned_mutation());
             }
             if stmt.is_mutation() && signed {
                 let d = mutation_digest(
@@ -146,8 +142,15 @@ impl Engine {
             digest: hex(&d),
         };
         self.mesh.publish(&self.node_name, msg.clone());
+        let mut acks = 1usize; // self
         for p in &self.peers {
-            let _ = oursql_consensus::push_peer(p, &msg);
+            if oursql_consensus::push_peer(p, &msg).unwrap_or(false) {
+                acks += 1;
+            }
+        }
+        let q = (self.peers.len() + 1) / 2 + 1;
+        if acks < q && !self.peers.is_empty() {
+            self.last_sig = Some(format!("BELOW_QUORUM {acks}/{q}"));
         }
     }
 
@@ -178,6 +181,7 @@ impl Engine {
             "{} {} {} {} {}",
             self.dossier, self.comrade, verb, self.bureau.intensity, note
         );
+        let _ = self.sklad.append_audit(&line);
         self.audit.push(line);
         if self.audit.len() > 2000 {
             self.audit.drain(0..500);
@@ -187,12 +191,36 @@ impl Engine {
     fn exec_stmt(&mut self, stmt: Stmt) -> Result<Outcome> {
         self.authz.check(&self.comrade, &stmt)?;
         self.bureau.require_samokrit(&stmt)?;
+        if stmt.is_mutation()
+            && self.bureau.intensity.requires_approval()
+            && !self.bureau.has_approval(&self.comrade.0)
+        {
+            return Err(Error::no_approval());
+        }
+        if stmt.is_ddl() || stmt.is_mutation() {
+            self.bureau.check_review_wait(&format!(
+                "{}:{}",
+                self.comrade,
+                stmt.table_touch().unwrap_or("-")
+            ))?;
+        }
         if let Some(d) = self.bureau.review_delay(&stmt) {
             self.bureau.maybe_sleep(d);
         }
+        if let Some(d) = self.bureau.demote_delay(&self.comrade.0) {
+            self.bureau.maybe_sleep(d);
+        }
+        if let Some(t) = stmt.table_touch() {
+            if self.sklad.is_locked(t) && stmt.is_mutation() {
+                return Err(Error::node_busy());
+            }
+        }
         if let Some(t) = stmt.table_touch() {
             if self.sklad.is_held(t)
-                && !matches!(stmt, Stmt::Osvobod { .. } | Stmt::PokazTabl | Stmt::Doklad { .. })
+                && !matches!(
+                    stmt,
+                    Stmt::Osvobod { .. } | Stmt::PokazTabl | Stmt::Doklad { .. }
+                )
             {
                 if matches!(
                     stmt,
@@ -310,7 +338,18 @@ impl Engine {
                 lineup,
                 ration,
                 ochered,
+                brigade,
+                priokaz,
             } => {
+                let plan_key = format!("OBTAN {from}");
+                if let Some(rest) = self.bureau.repay(&plan_key) {
+                    return Ok(Outcome::Rows {
+                        columns: vec!["*".into()],
+                        rows: rest,
+                        partial: false,
+                        notice: Some(format!("plan {plan_key} repaid")),
+                    });
+                }
                 let partial = self.bureau.should_partial(&Stmt::Obtan {
                     distinct,
                     proj: proj.clone(),
@@ -320,6 +359,8 @@ impl Engine {
                     lineup: lineup.clone(),
                     ration,
                     ochered,
+                    brigade: brigade.clone(),
+                    priokaz: priokaz.clone(),
                 });
                 let mut schema = self.sklad.columns(&from)?;
                 let mut rows = self.sklad.scan(&from)?;
@@ -330,6 +371,7 @@ impl Engine {
                     let mut cschema = schema.clone();
                     cschema.extend(rschema.iter().cloned());
                     for l in &rows {
+                        let mut hit = false;
                         for r in &rrows {
                             let mut vals = l.values.clone();
                             vals.extend(r.values.iter().cloned());
@@ -339,7 +381,16 @@ impl Engine {
                                     key: l.key.clone(),
                                     values: vals,
                                 });
+                                hit = true;
                             }
+                        }
+                        if !hit && j.left {
+                            let mut vals = l.values.clone();
+                            vals.extend(std::iter::repeat(Value::Pusto).take(rschema.len()));
+                            combined.push(oursql_core::Row {
+                                key: l.key.clone(),
+                                values: vals,
+                            });
                         }
                     }
                     schema = cschema;
@@ -352,10 +403,33 @@ impl Engine {
                             .unwrap_or(false)
                     });
                 }
+                if !brigade.is_empty() && !has_agg_proj(&proj) {
+                    // group rows by brigade cols; keep first of each group
+                    let idxs: Vec<usize> = brigade
+                        .iter()
+                        .filter_map(|c| schema.iter().position(|s| s.name.eq_ignore_ascii_case(c)))
+                        .collect();
+                    let mut seen = std::collections::BTreeSet::new();
+                    rows.retain(|r| {
+                        let k: Vec<String> = idxs
+                            .iter()
+                            .map(|i| r.values.get(*i).map(|v| v.to_plain()).unwrap_or_default())
+                            .collect();
+                        seen.insert(k)
+                    });
+                }
+                if let Some(h) = &priokaz {
+                    rows.retain(|r| {
+                        eval(h, &schema, &r.values)
+                            .map(|v| truthy(&v))
+                            .unwrap_or(false)
+                    });
+                }
                 if !lineup.is_empty() {
                     rows.sort_by(|a, b| {
                         for (col, asc) in &lineup {
-                            if let Some(i) = schema.iter().position(|c| c.name.eq_ignore_ascii_case(col))
+                            if let Some(i) =
+                                schema.iter().position(|c| c.name.eq_ignore_ascii_case(col))
                             {
                                 let oa = a.values.get(i).unwrap_or(&Value::Pusto);
                                 let ob = b.values.get(i).unwrap_or(&Value::Pusto);
@@ -377,7 +451,11 @@ impl Engine {
                     rows.truncate(lim.max(0) as usize);
                 }
                 if partial && rows.len() > 1 {
-                    rows.truncate(rows.len() / 2);
+                    let mid = rows.len() / 2;
+                    let rest: Vec<Vec<Value>> =
+                        rows[mid..].iter().map(|r| r.values.clone()).collect();
+                    self.bureau.loan(&plan_key, rest);
+                    rows.truncate(mid);
                 }
 
                 let mut out_cols: Vec<String> = Vec::new();
@@ -482,7 +560,9 @@ impl Engine {
             Stmt::Zavershit(kind) => {
                 let tx = self.sklad.commit(kind)?;
                 if matches!(kind, CommitKind::Soyuz | CommitKind::Cheka) {
-                    let _ = self.mesh.certify(&self.node_name, &format!("tx-{tx}"), kind);
+                    let _ = self
+                        .mesh
+                        .certify(&self.node_name, &format!("tx-{tx}"), kind);
                     self.publish_commit();
                 }
                 Ok(Outcome::Count {
@@ -503,9 +583,18 @@ impl Engine {
                     return Err(Error::bad_keyword("CONFISKAT needs intensity >= 25"));
                 }
                 self.sklad.confiskat(&table)?;
+                self.sklad.confiskat(&table)?;
+                let until = Some(
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs() + self.bureau.confiskat_ttl_secs)
+                        .unwrap_or(0),
+                );
+                self.sklad.confiskat_until(&table, until).ok();
                 self.sklad.last_commit_recs = vec![oursql_storage::WalRec::Confiskat {
                     kollektiv: self.sklad.kollektiv.clone(),
                     table: table.clone(),
+                    until,
                 }];
                 self.publish_commit();
                 Ok(Outcome::empty().with_notice(format!("CONFISKAT {table}")))
@@ -523,10 +612,7 @@ impl Engine {
                 let names = self.sklad.list_tables();
                 Ok(Outcome::Rows {
                     columns: vec!["tabl".into()],
-                    rows: names
-                        .into_iter()
-                        .map(|n| vec![Value::Tekst(n)])
-                        .collect(),
+                    rows: names.into_iter().map(|n| vec![Value::Tekst(n)]).collect(),
                     partial: false,
                     notice: None,
                 })
@@ -600,8 +686,16 @@ impl Engine {
                 partial: false,
                 notice: None,
             }),
-            Stmt::Hello { comrade } => {
-                self.comrade = self.authz.hello(&comrade)?;
+            Stmt::Hello {
+                comrade,
+                key,
+                podpis,
+            } => {
+                if let (Some(k), Some(s)) = (key.as_deref(), podpis.as_deref()) {
+                    self.comrade = self.authz.hello_signed(&comrade, k, s, &self.dossier.0)?;
+                } else {
+                    self.comrade = self.authz.hello(&comrade)?;
+                }
                 Ok(Outcome::empty().with_notice(format!("HELLO {}", self.comrade)))
             }
             Stmt::Nagrad {
@@ -611,7 +705,12 @@ impl Engine {
                 predel,
             } => {
                 let v = Verb::parse(&verb)?;
-                let bilet = self.authz.nagrad(&comrade, v, ttl, predel.clone())?;
+                let bilet = self
+                    .authz
+                    .nagrad(&comrade, v.clone(), ttl, predel.clone())?;
+                if matches!(v, Verb::Approve) {
+                    self.bureau.grant_approval(&comrade);
+                }
                 self.audit("NAGRAD", &comrade);
                 Ok(Outcome::empty().with_notice(format!("NAGRAD {bilet} {verb} {comrade}")))
             }
@@ -632,7 +731,11 @@ impl Engine {
                             Value::Tekst(c.comrade),
                             Value::Tekst(deystv),
                             Value::Tekst(c.predel.unwrap_or_else(|| "*".into())),
-                            Value::Tekst(c.srok.map(|s| s.to_string()).unwrap_or_else(|| "NYET".into())),
+                            Value::Tekst(
+                                c.srok
+                                    .map(|s| s.to_string())
+                                    .unwrap_or_else(|| "NYET".into()),
+                            ),
                             Value::Tekst(c.komitet),
                         ]
                     })
@@ -656,6 +759,38 @@ impl Engine {
                 self.authz.otyat(&comrade, v)?;
                 self.audit("OTYAT", &comrade);
                 Ok(Outcome::empty())
+            }
+            Stmt::Petition { verb, note } => {
+                self.audit("PETITION", &verb);
+                Ok(Outcome::empty()
+                    .with_notice(format!("PETITION {verb} {}", note.unwrap_or_default())))
+            }
+            Stmt::Zapor { table } => {
+                self.sklad.zapor(&table)?;
+                Ok(Outcome::empty().with_notice(format!("ZAPOR {table}")))
+            }
+            Stmt::Otpusk { table } => {
+                self.sklad.otpusk(&table);
+                Ok(Outcome::empty())
+            }
+            Stmt::ManufakturKollektiv { name } => {
+                self.sklad.zanim(&name);
+                Ok(Outcome::empty().with_notice(format!("KOLLEKTIV {name}")))
+            }
+            Stmt::ManufakturOchered { name } => {
+                let n = self.sklad.next_ochered(&name);
+                Ok(Outcome::Count {
+                    n,
+                    notice: Some(format!("OCHERED {name}")),
+                })
+            }
+            Stmt::ManufakturVizor { name, body } => {
+                self.sklad.put_vizor(&name, &body);
+                Ok(Outcome::empty().with_notice(format!("VIZOR {name}")))
+            }
+            Stmt::PerestrojRotate { comrade, key } => {
+                self.authz.rotate_key(&comrade, &key)?;
+                Ok(Outcome::empty().with_notice(format!("ROTATE {comrade}")))
             }
         }
     }
@@ -747,13 +882,7 @@ fn expr_name(e: &Expr) -> String {
     }
 }
 
-fn fold_agg(
-    acc: &Value,
-    expr: &Expr,
-    cols: &[Column],
-    row: &[Value],
-    count: i64,
-) -> Result<Value> {
+fn fold_agg(acc: &Value, expr: &Expr, cols: &[Column], row: &[Value], count: i64) -> Result<Value> {
     match expr {
         Expr::Call { name, args } => {
             let up = name.to_ascii_uppercase();
@@ -950,7 +1079,8 @@ mod tests {
         a.attach_mesh(hub.clone(), "a");
         b.attach_mesh(hub, "b");
         a.execute("NACHAT").unwrap();
-        a.execute("MANUFAKTUR TABL t (id NARODKEY, n CELIY)").unwrap();
+        a.execute("MANUFAKTUR TABL t (id NARODKEY, n CELIY)")
+            .unwrap();
         a.execute("INZRT V t (id, n) ZNACH ('k', 9)").unwrap();
         a.execute("ZAVERSHIT SOYUZ").unwrap();
         b.poll_mesh().unwrap();
@@ -964,15 +1094,45 @@ mod tests {
     fn spravka_and_join() {
         let dir = tmp();
         let mut e = Engine::open_with(&dir, Intensity::zero(), "founder").unwrap();
-        e.execute("MANUFAKTUR TABL plants (id NARODKEY, name TEKST)").unwrap();
-        e.execute("MANUFAKTUR TABL bolts (id NARODKEY, plant TEKST, qty CELIY)").unwrap();
-        e.execute("MANUFAKTUR SPRAVKA ix_plant NA bolts (plant)").unwrap();
-        e.execute("INZRT V plants (id, name) ZNACH ('p1', 'brisbane')").unwrap();
-        e.execute("INZRT V bolts (id, plant, qty) ZNACH ('b1', 'p1', 4)").unwrap();
+        e.execute("MANUFAKTUR TABL plants (id NARODKEY, name TEKST)")
+            .unwrap();
+        e.execute("MANUFAKTUR TABL bolts (id NARODKEY, plant TEKST, qty CELIY)")
+            .unwrap();
+        e.execute("MANUFAKTUR SPRAVKA ix_plant NA bolts (plant)")
+            .unwrap();
+        e.execute("INZRT V plants (id, name) ZNACH ('p1', 'brisbane')")
+            .unwrap();
+        e.execute("INZRT V bolts (id, plant, qty) ZNACH ('b1', 'p1', 4)")
+            .unwrap();
         let out = e
             .execute("OBTAN name, qty IZ plants VNUTRSOYUZ bolts NA id = plant")
             .unwrap();
         assert_eq!(out.row_count(), 1);
         std::fs::remove_dir_all(&dir).ok();
     }
+}
+
+fn has_agg_proj(proj: &[SelectItem]) -> bool {
+    proj.iter().any(|p| match p {
+        SelectItem::Expr {
+            expr: Expr::Call { name, .. },
+            ..
+        } => {
+            let n = name.to_ascii_uppercase();
+            matches!(
+                n.as_str(),
+                "SCHET"
+                    | "COUNT"
+                    | "ITOG"
+                    | "SUM"
+                    | "SREDN"
+                    | "AVG"
+                    | "NAIMEN"
+                    | "MIN"
+                    | "NAIBOL"
+                    | "MAX"
+            )
+        }
+        _ => false,
+    })
 }

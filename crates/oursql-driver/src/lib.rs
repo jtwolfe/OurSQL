@@ -6,9 +6,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 
 use oursql_core::{Error, Result};
-use oursql_wire::{
-    Frame, T_DONE, T_ERROR, T_HELLO, T_NOTICE, T_ROWS, T_STMT, T_WELCOME,
-};
+use oursql_wire::{Frame, T_DONE, T_ERROR, T_HELLO, T_NOTICE, T_ROWS, T_STMT, T_WELCOME};
 
 pub struct Client {
     stream: TcpStream,
@@ -51,7 +49,9 @@ impl Client {
                     }
                 }
                 T_ERROR => {
-                    return Err(Error::bad_grammar(String::from_utf8_lossy(&f.payload[4.min(f.payload.len())..]).to_string()));
+                    return Err(Error::bad_grammar(
+                        String::from_utf8_lossy(&f.payload[4.min(f.payload.len())..]).to_string(),
+                    ));
                 }
                 _ => break,
             }

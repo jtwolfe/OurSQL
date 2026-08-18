@@ -271,13 +271,26 @@ impl Authz {
         if !ok {
             return Err(Error::cap_expired());
         }
+        for c in self
+            .caps
+            .iter()
+            .filter(|c| c.comrade == who.0 || c.comrade == "*")
+        {
+            if c.uslov.samokrit && stmt.is_mutation() && stmt.samokrit().is_none() {
+                return Err(Error::samokrit_required());
+            }
+        }
         Ok(())
     }
 
     pub fn nagrad_god(&mut self, comrade: impl Into<String>) {
         let h = comrade.into();
         self.comrades.insert(h.clone());
-        if !self.caps.iter().any(|c| c.comrade == h && c.predel.is_none()) {
+        if !self
+            .caps
+            .iter()
+            .any(|c| c.comrade == h && c.predel.is_none())
+        {
             self.caps.push(Capability::god(&h));
         }
         let _ = self.save();
@@ -344,6 +357,31 @@ impl Authz {
         }
     }
 
+    pub fn hello_signed(
+        &mut self,
+        name: &str,
+        key: &str,
+        podpis: &str,
+        nonce: &str,
+    ) -> Result<ComradeId> {
+        let msg = format!("HELLO|{nonce}|{name}");
+        let Some(sig) = oursql_crypto::unhex64(podpis) else {
+            return Err(Error::bad_hello());
+        };
+        if !KeyPair::verify(key, msg.as_bytes(), &sig) {
+            return Err(Error::bad_hello());
+        }
+        self.comrades.insert(name.to_string());
+        Ok(ComradeId(name.to_string()))
+    }
+
+    pub fn rotate_key(&mut self, comrade: &str, _key: &str) -> Result<()> {
+        if !self.comrades.contains(comrade) {
+            return Err(Error::cap_expired());
+        }
+        self.save()
+    }
+
     pub fn sign_mutation(&self, digest: &[u8; 32]) -> String {
         hex(&self.node.sign(digest))
     }
@@ -407,7 +445,9 @@ mod tests {
     #[test]
     fn bilet_json_uses_nash_names() {
         let mut a = Authz::open();
-        let id = a.nagrad("mill", Verb::Obtan, None, Some("parts".into())).unwrap();
+        let id = a
+            .nagrad("mill", Verb::Obtan, None, Some("parts".into()))
+            .unwrap();
         assert!(id.starts_with("BIL-"));
         let raw = serde_json::to_string(&a.caps.last().unwrap()).unwrap();
         assert!(raw.contains("\"comrade\""));

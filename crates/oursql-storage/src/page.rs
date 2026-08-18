@@ -10,7 +10,9 @@ pub const PAGE_MAGIC: &[u8; 8] = b"OURLPG01";
 pub enum PageType {
     Meta = 1,
     Leaf = 2,
+    Branch = 5,
     Overflow = 3,
+    Undo = 6,
     Freelist = 4,
 }
 
@@ -21,6 +23,8 @@ impl PageType {
             2 => Ok(Self::Leaf),
             3 => Ok(Self::Overflow),
             4 => Ok(Self::Freelist),
+            5 => Ok(Self::Branch),
+            6 => Ok(Self::Undo),
             _ => Err(Error::page_checksum()),
         }
     }
@@ -59,7 +63,11 @@ pub fn unpack(page: &[u8]) -> Result<(PageType, u32, &[u8])> {
 }
 
 /// Encrypted checkpoint file: magic + page_count + sealed pages.
-pub fn write_checkpoint(path: impl AsRef<std::path::Path>, key: &[u8; 32], pages: &[[u8; PAGE_SIZE]]) -> Result<()> {
+pub fn write_checkpoint(
+    path: impl AsRef<std::path::Path>,
+    key: &[u8; 32],
+    pages: &[[u8; PAGE_SIZE]],
+) -> Result<()> {
     use std::io::Write;
     let path = path.as_ref();
     if let Some(dir) = path.parent() {
@@ -78,7 +86,10 @@ pub fn write_checkpoint(path: impl AsRef<std::path::Path>, key: &[u8; 32], pages
     Ok(())
 }
 
-pub fn read_checkpoint(path: impl AsRef<std::path::Path>, key: &[u8; 32]) -> Result<Vec<[u8; PAGE_SIZE]>> {
+pub fn read_checkpoint(
+    path: impl AsRef<std::path::Path>,
+    key: &[u8; 32],
+) -> Result<Vec<[u8; PAGE_SIZE]>> {
     use std::io::Read;
     let path = path.as_ref();
     if !path.exists() {

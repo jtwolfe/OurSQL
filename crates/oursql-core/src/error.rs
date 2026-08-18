@@ -22,12 +22,7 @@ pub struct Error {
 }
 
 impl Error {
-    pub fn new(
-        code: u16,
-        name: &'static str,
-        kind: ErrorKind,
-        message: impl Into<String>,
-    ) -> Self {
+    pub fn new(code: u16, name: &'static str, kind: ErrorKind, message: impl Into<String>) -> Self {
         Self {
             code,
             name,
@@ -107,7 +102,11 @@ impl Error {
         .retry(retry_after_ms)
     }
     pub fn confiskat() -> Self {
-        Self::bureau(1906, "CONFISKAT", "Target is under CHEKA hold. Wait for OSVOBOD.")
+        Self::bureau(
+            1906,
+            "CONFISKAT",
+            "Target is under CHEKA hold. Wait for OSVOBOD.",
+        )
     }
     pub fn bourgeois_dialect() -> Self {
         Self::bureau(1908, "BOURGEOIS_DIALECT", "rewrite in NashCQL")
@@ -116,7 +115,11 @@ impl Error {
         Self::bureau(1909, "SAMOKRIT_REQUIRED", "add SAMOKRIT")
     }
     pub fn too_many_accusations() -> Self {
-        Self::bureau(1910, "TOO_MANY_ACCUSATIONS", "ration of accusations exhausted")
+        Self::bureau(
+            1910,
+            "TOO_MANY_ACCUSATIONS",
+            "ration of accusations exhausted",
+        )
     }
     pub fn intensity_denied() -> Self {
         Self::bureau(1911, "INTENSITY_DENIED", "cannot set intensity")
@@ -143,6 +146,43 @@ impl Error {
     }
     pub fn node_busy() -> Self {
         Self::mesh(2108, "NODE_BUSY", "session worker queue full")
+    }
+    pub fn unsigned_mutation() -> Self {
+        Self::mesh(2110, "UNSIGNED_MUTATION", "unsigned mutation refused")
+    }
+    pub fn perestroj_wait() -> Self {
+        Self::mesh(
+            2109,
+            "PERESTROJ_WAIT",
+            "schema epoch mismatch; repair first",
+        )
+    }
+    pub fn bad_hello() -> Self {
+        Self::mesh(2106, "BAD_HELLO", "HELLO missing or bad PODPIS")
+    }
+    pub fn review_wait(ms: u16) -> Self {
+        Self::bureau(1903, "REVIEW_WAIT", "komitet is reviewing").retry(ms)
+    }
+    pub fn accused(msg: impl Into<String>) -> Self {
+        Self::bureau(1907, "ACCUSED", msg)
+    }
+    pub fn pool_exhausted() -> Self {
+        Self::storage(2003, "POOL_EXHAUSTED", "page buffer pool is full")
+    }
+    pub fn not_in_view() -> Self {
+        Self::mesh(2101, "NOT_IN_VIEW", "node not in view")
+    }
+    pub fn unreliable_peer() -> Self {
+        Self::mesh(2103, "UNRELIABLE_PEER", "peer marked UNRELIABLE")
+    }
+    pub fn join_refused(msg: impl Into<String>) -> Self {
+        Self::mesh(2104, "JOIN_REFUSED", msg)
+    }
+    pub fn repair_needed() -> Self {
+        Self::mesh(2105, "REPAIR_NEEDED", "plant is behind; NEED a snapshot")
+    }
+    pub fn fk_fight(msg: impl Into<String>) -> Self {
+        Self::lang(1804, "TYPE_FIGHT", msg)
     }
 }
 
