@@ -73,9 +73,15 @@ repair.
 
 ## Repair
 
-If B is missing a certified digest that A has, B pulls the WAL payload
-and applies. If apply fails (schema epoch mismatch), B stops accepting
-user writes and enters `PERESTROJ-WAIT`.
+If B is missing a certified digest that A has, B sends `NEED` on the
+mesh port. A replies `SNAPSHOT` with the exported WAL batch (every
+tabl, spravka, and hold). B `apply_remote`s it.
+
+`oursqld --peer A` does this at boot. That is how a fifth plant joins
+an already-full kollektiv.
+
+If apply fails (schema epoch mismatch), B stops accepting writes and
+enters `PERESTROJ-WAIT`.
 
 ## Why not a public chain
 

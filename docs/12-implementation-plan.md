@@ -60,6 +60,13 @@
 - CHEKA expiry enforced
 - Driver OCHERED/1 + `oursqld --admin`
 
+## Phase 7 — bilets + in-situ — done
+
+- Capability is a real struct: bilet / comrade / deystv / predel / srok / komitet / uslov
+- `NAGRAD ... PREDEL ... SROK`, `POKAZ BILET`
+- NEED/SNAPSHOT repair at boot
+- 4-plant in-process + 4+1 process in-situ tests
+
 ## Explicitly later
 
 - Stored procedures

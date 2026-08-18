@@ -7,70 +7,70 @@ You run the node. You keep the disk. The mesh is a treaty, not a landlord.
 ## Init
 
 ```
-oursqld init \
-  --data /var/lib/oursql \
-  --founder founder1.pub \
-  --founder founder2.pub \
-  --founder founder3.pub \
-  --intensity 25
+oursqld init --data /var/lib/oursql --intensity 25
 ```
 
-One founder is allowed. Three is the documented default.
+Writes `node.key` (0600), `authz.json` (FOUNDERS god-bilet), empty WAL.
 
-## Run
-
-```
-oursqld run --data /var/lib/oursql --config /etc/oursql/node.toml
-```
-
-Production profile refuses:
-
-- world-readable keys
-- intensity set without a signed config event after bootstrap
-- bind-any without pin-set
-- missing `wal.fsync = true`
-
-## Join a kollektiv
+## Run a lonely plant
 
 ```
-oursql petition join \
-  --to nash://plant-1.example:3307 \
-  --kollektiv sklad \
-  --samokrit 'south depot node'
+oursqld run --data /var/lib/oursql --listen 127.0.0.1:3307 --intensity 25
 ```
 
-An existing komitet member:
+Talk to it:
 
 ```
-oursql nagrad join --petition PET-... --samokrit 'accepted by founders'
+oursql --data /var/lib/oursql --intensity 0 -f examples/hello-kollektiv.nql
+# or
+printf 'POKAZ TABL;\n' | nc 127.0.0.1 3307
 ```
+
+## Run a kollektiv (four plants)
+
+Each plant has its own disk. `--peer` is the **mesh** address, not the
+NashCQL listen address.
+
+```
+oursqld run --data /a --name alpha --listen 127.0.0.1:3307 --mesh 127.0.0.1:3401 \
+  --peer 127.0.0.1:3402 --peer 127.0.0.1:3403 --peer 127.0.0.1:3404 --intensity 0
+oursqld run --data /b --name beta  --listen 127.0.0.1:3308 --mesh 127.0.0.1:3402 \
+  --peer 127.0.0.1:3401 --intensity 0
+# gamma, delta the same
+```
+
+Then on alpha:
+
+```
+NACHAT;
+MANUFAKTUR TABL bolts (id NARODKEY, qty CELIY);
+INZRT V bolts (id, qty) ZNACH ('b1', 40);
+ZAVERSHIT SOYUZ;
+```
+
+Beta can `OBTAN * IZ bolts`. A fifth plant with `--peer 127.0.0.1:3401`
+sends `NEED` at boot and receives a `SNAPSHOT`.
+
+HTTP clerk (optional): `--admin 127.0.0.1:3309` then
+`GET /health`, `GET /pokaz`, `POST /nql`.
 
 ## Backup
 
-- Cold: stop node, copy `$OURL_DATA`.
-- Hot: `oursql pokaž` is wrong (diacritics banned). Use
-  `oursql pokaz backup --dest /backup/oursql`.
-- Backup is pages + WAL + keys **you already have**. We do not invent a
-  proprietary bundle format in phase 1; tar + checksum is enough.
+Cold: stop node, copy the data dir (`node.key`, `wal.log`,
+`kollektiv/pages/checkpoint.pg`, `authz.json`). Tar + checksum is enough.
 
 ## Restore
 
-Copy data dir, start. If view epoch is ahead of local, node enters
-repair.
+Copy data dir, start. If the plant is behind the mesh, `--peer` an
+up-to-date node; NEED/SNAPSHOT fills it.
 
 ## Intensity change
 
 ```
-USTANOV kollektiv.bureau.intensity = 25 SAMOKRIT 'default restored';
+USTANOV intensity = 25;
 ```
 
-This is a certified `_meta` write. It is not a silent flag.
-
-## Hardware notes
-
-- Prefer dedicated disk for WAL.
-- RAM: SKLAD will use a buffer pool (`sklad.pool_bytes`).
-- CPU: rustls + blake3 are the hot costs after IO.
+Local to that plant. Intensity is not a mesh vote.
 
 ## What "users keep the means of data hosting" is not
 

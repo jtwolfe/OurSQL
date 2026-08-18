@@ -138,6 +138,22 @@ impl LocalMesh {
     }
 }
 
+/// Ask a peer for a snapshot of certified state.
+pub fn request_repair(addr: &str) -> Result<ApplyMsg> {
+    let mut s = TcpStream::connect(addr)?;
+    s.set_read_timeout(Some(Duration::from_secs(5))).ok();
+    s.set_write_timeout(Some(Duration::from_secs(5))).ok();
+    writeln!(s, "NEED")?;
+    s.flush()?;
+    let mut reader = BufReader::new(s);
+    let mut resp = String::new();
+    reader.read_line(&mut resp)?;
+    let rest = resp
+        .strip_prefix("SNAPSHOT ")
+        .ok_or_else(|| Error::mesh(2108, "NODE_BUSY", "no snapshot"))?;
+    serde_json::from_str(rest.trim()).map_err(|e| Error::mesh(2108, "NODE_BUSY", e.to_string()))
+}
+
 /// Push APPLY json lines to a peer. Returns true on ACK.
 pub fn push_peer(addr: &str, msg: &ApplyMsg) -> Result<bool> {
     let mut s = TcpStream::connect(addr)?;
@@ -152,23 +168,32 @@ pub fn push_peer(addr: &str, msg: &ApplyMsg) -> Result<bool> {
     Ok(resp.starts_with("ACK"))
 }
 
-/// Listen for APPLY / REPAIR on `addr`. Callback gets the message.
-pub fn serve_mesh(addr: &str, on_apply: Arc<dyn Fn(ApplyMsg) -> Result<()> + Send + Sync>) -> Result<()> {
+/// Listen for APPLY / NEED on `addr`.
+pub fn serve_mesh(
+    addr: &str,
+    on_apply: Arc<dyn Fn(ApplyMsg) -> Result<()> + Send + Sync>,
+    on_need: Arc<dyn Fn() -> Result<ApplyMsg> + Send + Sync>,
+) -> Result<()> {
     let listener = TcpListener::bind(addr)?;
     listener.set_nonblocking(false)?;
     thread::spawn(move || {
         for conn in listener.incoming() {
             let Ok(stream) = conn else { continue };
-            let cb = Arc::clone(&on_apply);
+            let apply = Arc::clone(&on_apply);
+            let need = Arc::clone(&on_need);
             thread::spawn(move || {
-                let _ = handle_mesh(stream, cb);
+                let _ = handle_mesh(stream, apply, need);
             });
         }
     });
     Ok(())
 }
 
-fn handle_mesh(stream: TcpStream, on_apply: Arc<dyn Fn(ApplyMsg) -> Result<()> + Send + Sync>) -> Result<()> {
+fn handle_mesh(
+    stream: TcpStream,
+    on_apply: Arc<dyn Fn(ApplyMsg) -> Result<()> + Send + Sync>,
+    on_need: Arc<dyn Fn() -> Result<ApplyMsg> + Send + Sync>,
+) -> Result<()> {
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut writer = stream;
     let mut line = String::new();
@@ -178,6 +203,10 @@ fn handle_mesh(stream: TcpStream, on_apply: Arc<dyn Fn(ApplyMsg) -> Result<()> +
             serde_json::from_str(rest.trim()).map_err(|e| Error::mesh(2108, "NODE_BUSY", e.to_string()))?;
         on_apply(msg)?;
         writeln!(writer, "ACK")?;
+    } else if line.starts_with("NEED") {
+        let msg = on_need()?;
+        let body = serde_json::to_string(&msg).map_err(|e| Error::mesh(2108, "NODE_BUSY", e.to_string()))?;
+        writeln!(writer, "SNAPSHOT {body}")?;
     } else {
         writeln!(writer, "ERR")?;
     }

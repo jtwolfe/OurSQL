@@ -7,10 +7,9 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use oursql_consensus::{serve_mesh, ApplyMsg};
+use oursql_consensus::{request_repair, serve_mesh, ApplyMsg};
 use oursql_core::Intensity;
 use oursql_engine::Engine;
-use oursql_storage::WalRec;
 use oursql_wire::split_statements;
 
 fn main() {
@@ -69,21 +68,37 @@ fn run() -> oursql_core::Result<()> {
     let mut eng = Engine::open_with(&data, intensity, "founder")?;
     eng.node_name = name.clone();
     eng.mesh.join(&name);
-    eng.peers = peers;
+    eng.peers = peers.clone();
     let shared = Arc::new(Mutex::new(eng));
 
-    if let Some(addr) = mesh {
-        let eng = Arc::clone(&shared);
+    if let Some(addr) = mesh.clone() {
+        let apply_eng = Arc::clone(&shared);
+        let need_eng = Arc::clone(&shared);
         serve_mesh(
             &addr,
             Arc::new(move |msg: ApplyMsg| {
-                let recs: Vec<WalRec> = serde_json::from_str(&msg.recs_json)
-                    .map_err(|e| oursql_core::Error::recovery_failed(e.to_string()))?;
-                let mut g = eng.lock().expect("engine");
-                g.sklad.apply_remote(&recs)
+                let mut g = apply_eng.lock().expect("engine");
+                g.apply_msg(msg)
+            }),
+            Arc::new(move || {
+                let g = need_eng.lock().expect("engine");
+                Ok(g.snapshot_msg())
             }),
         )?;
         eprintln!("mesh {addr}");
+        for peer in &peers {
+            match request_repair(peer) {
+                Ok(msg) => {
+                    let mut g = shared.lock().expect("engine");
+                    if let Err(e) = g.apply_msg(msg) {
+                        eprintln!("repair from {peer}: {e}");
+                    } else {
+                        eprintln!("repaired from {peer}");
+                    }
+                }
+                Err(e) => eprintln!("NEED {peer}: {e}"),
+            }
+        }
     }
 
     if let Some(addr) = admin.clone() {

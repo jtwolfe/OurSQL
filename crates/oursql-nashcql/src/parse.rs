@@ -458,6 +458,9 @@ impl Parser {
         if self.try_kw("COMRADE") {
             return Ok(Stmt::PokazComrade);
         }
+        if self.try_kw("BILET") {
+            return Ok(Stmt::PokazBilet);
+        }
         Ok(Stmt::PokazTabl)
     }
 
@@ -504,12 +507,29 @@ impl Parser {
         let _ = self.try_kw("NA");
         let _ = self.try_kw("COMRADE");
         let comrade = self.eat_ident()?;
-        let ttl = if matches!(self.peek(), Some(Tok::Int(_))) {
-            Some(self.eat_int()? as u64)
-        } else {
-            None
-        };
-        Ok(Stmt::Nagrad { verb, comrade, ttl })
+        let mut predel = None;
+        let mut ttl = None;
+        loop {
+            if self.try_kw("PREDEL") {
+                predel = Some(self.eat_ident()?);
+                continue;
+            }
+            if self.try_kw("SROK") {
+                ttl = Some(self.eat_int()? as u64);
+                continue;
+            }
+            if matches!(self.peek(), Some(Tok::Int(_))) {
+                ttl = Some(self.eat_int()? as u64);
+                continue;
+            }
+            break;
+        }
+        Ok(Stmt::Nagrad {
+            verb,
+            comrade,
+            ttl,
+            predel,
+        })
     }
 
     fn otyat(&mut self) -> Result<Stmt> {

@@ -84,6 +84,9 @@ pub const KEYWORDS: &[Keyword] = &[
     Keyword { nash: "AUDIT", sql: "AUDIT" },
     Keyword { nash: "ON", sql: "ON" },
     Keyword { nash: "APPROVAL", sql: "APPROVAL" },
+    Keyword { nash: "PREDEL", sql: "SCOPE" },
+    Keyword { nash: "SROK", sql: "UNTIL" },
+    Keyword { nash: "BILET", sql: "CAPABILITY" },
 ];
 
 pub fn is_keyword(s: &str) -> bool {

@@ -285,7 +285,7 @@ checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
 name = "oursql-authz"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "oursql-core",
  "oursql-crypto",
@@ -296,7 +296,7 @@ dependencies = [
 
 [[package]]
 name = "oursql-bureau"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "oursql-core",
  "oursql-nashcql",
@@ -304,7 +304,7 @@ dependencies = [
 
 [[package]]
 name = "oursql-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "oursql-core",
  "oursql-driver",
@@ -314,7 +314,7 @@ dependencies = [
 
 [[package]]
 name = "oursql-consensus"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "oursql-core",
  "oursql-crypto",
@@ -324,14 +324,14 @@ dependencies = [
 
 [[package]]
 name = "oursql-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "oursql-crypto"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "blake3",
  "chacha20poly1305",
@@ -343,7 +343,7 @@ dependencies = [
 
 [[package]]
 name = "oursql-driver"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "oursql-core",
  "oursql-wire",
@@ -351,7 +351,7 @@ dependencies = [
 
 [[package]]
 name = "oursql-engine"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "oursql-authz",
  "oursql-bureau",
@@ -366,14 +366,14 @@ dependencies = [
 
 [[package]]
 name = "oursql-nashcql"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "oursql-core",
 ]
 
 [[package]]
 name = "oursql-node"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "oursql-consensus",
  "oursql-core",
@@ -386,7 +386,7 @@ dependencies = [
 
 [[package]]
 name = "oursql-storage"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "oursql-core",
  "oursql-crypto",
@@ -396,7 +396,7 @@ dependencies = [
 
 [[package]]
 name = "oursql-wire"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "oursql-core",
 ]

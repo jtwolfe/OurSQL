@@ -1,6 +1,6 @@
 //! Brigade AUTHZ.
 //!
-//! Comrades, komitets, capabilities. Persisted next to node.key. No WAL.
+//! Comrades, komitets, bilets (capabilities). Persisted next to node.key.
 
 #![deny(unsafe_code)]
 
@@ -42,6 +42,20 @@ impl Verb {
         }
     }
 
+    pub fn as_nash(&self) -> &'static str {
+        match self {
+            Verb::Obtan => "OBTAN",
+            Verb::Inzrt => "INZRT",
+            Verb::Opdat => "OPDAT",
+            Verb::Remov => "REMOV",
+            Verb::Ddl => "MANUFAKTUR",
+            Verb::Cheka => "CHEKA",
+            Verb::Accuse => "ACCUSE",
+            Verb::Admin => "ADMIN",
+            Verb::Approve => "APPROVAL",
+        }
+    }
+
     pub fn of(stmt: &Stmt) -> Self {
         match stmt {
             Stmt::Obtan { .. }
@@ -49,6 +63,7 @@ impl Verb {
             | Stmt::PokazUstanov
             | Stmt::PokazAudit
             | Stmt::PokazComrade
+            | Stmt::PokazBilet
             | Stmt::Doklad { .. }
             | Stmt::Razbor(_) => Verb::Obtan,
             Stmt::Inzrt { .. } => Verb::Inzrt,
@@ -66,18 +81,47 @@ impl Verb {
     }
 }
 
+/// Extra leash on a bilet. All optional; empty uslov means "no extra leash".
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Uslov {
+    pub ration: Option<u32>,
+    pub max_rows: Option<u64>,
+    pub samokrit: bool,
+}
+
+/// A NAGRAD ticket. Field names are NashCQL-shaped; old JSON aliases still load.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Capability {
-    pub holder: String,
-    pub verbs: HashSet<Verb>,
-    pub not_after_epoch: Option<u64>,
+    #[serde(default)]
+    pub bilet: String,
+    #[serde(alias = "holder")]
+    pub comrade: String,
+    #[serde(alias = "verbs")]
+    pub deystv: HashSet<Verb>,
+    /// Scope: None = whole kollektiv, Some(tabl) = that tabl only.
+    #[serde(default)]
+    pub predel: Option<String>,
+    #[serde(default)]
+    pub nachat: Option<u64>,
+    #[serde(alias = "not_after_epoch", default)]
+    pub srok: Option<u64>,
+    #[serde(default = "founders")]
+    pub komitet: String,
+    #[serde(default)]
+    pub uslov: Uslov,
+}
+
+fn founders() -> String {
+    "FOUNDERS".into()
 }
 
 impl Capability {
-    pub fn god(holder: impl Into<String>) -> Self {
+    pub fn god(comrade: impl AsRef<str>) -> Self {
+        let c = comrade.as_ref().to_string();
         Self {
-            holder: holder.into(),
-            verbs: HashSet::from([
+            bilet: format!("BIL-GOD-{}", comrade_slug(&c)),
+            comrade: c,
+            deystv: HashSet::from([
                 Verb::Obtan,
                 Verb::Inzrt,
                 Verb::Opdat,
@@ -88,35 +132,64 @@ impl Capability {
                 Verb::Admin,
                 Verb::Approve,
             ]),
-            not_after_epoch: None,
+            predel: None,
+            nachat: None,
+            srok: None,
+            komitet: "FOUNDERS".into(),
+            uslov: Uslov::default(),
         }
     }
 
-    pub fn expired(&self, now: u64) -> bool {
-        match self.not_after_epoch {
-            Some(t) => now >= t,
-            None => false,
+    pub fn live(&self, now: u64) -> bool {
+        if let Some(s) = self.nachat {
+            if now < s {
+                return false;
+            }
+        }
+        match self.srok {
+            Some(t) => now < t,
+            None => true,
         }
     }
 
-    pub fn allows(&self, v: &Verb, now: u64) -> bool {
-        if self.expired(now) {
+    pub fn covers_tabl(&self, tabl: Option<&str>) -> bool {
+        match (&self.predel, tabl) {
+            (None, _) => true,
+            (Some(_), None) => true,
+            (Some(p), Some(t)) => p.eq_ignore_ascii_case(t),
+        }
+    }
+
+    pub fn allows(&self, v: &Verb, now: u64, tabl: Option<&str>) -> bool {
+        if !self.live(now) {
             return false;
         }
-        self.verbs.contains(v) || self.verbs.contains(&Verb::Admin)
+        if !self.covers_tabl(tabl) {
+            return false;
+        }
+        self.deystv.contains(v) || self.deystv.contains(&Verb::Admin)
     }
+}
+
+fn comrade_slug(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect()
 }
 
 #[derive(Serialize, Deserialize)]
 struct Persist {
     comrades: HashSet<String>,
     caps: Vec<Capability>,
+    #[serde(default)]
+    next_bilet: u64,
 }
 
 pub struct Authz {
     pub node: KeyPair,
     pub comrades: HashSet<String>,
     pub caps: Vec<Capability>,
+    next_bilet: u64,
     path: PathBuf,
 }
 
@@ -131,6 +204,7 @@ impl Authz {
                 node: identity.keys.clone(),
                 comrades: p.comrades,
                 caps: p.caps,
+                next_bilet: p.next_bilet.max(1),
                 path,
             });
         }
@@ -138,7 +212,8 @@ impl Authz {
         let a = Self {
             node: identity.keys.clone(),
             comrades: HashSet::from([founder.clone()]),
-            caps: vec![Capability::god(founder)],
+            caps: vec![Capability::god(&founder)],
+            next_bilet: 1,
             path,
         };
         a.save()?;
@@ -151,7 +226,8 @@ impl Authz {
         Self {
             node,
             comrades: HashSet::from([founder.clone()]),
-            caps: vec![Capability::god(founder)],
+            caps: vec![Capability::god(&founder)],
+            next_bilet: 1,
             path: PathBuf::from("authz.json"),
         }
     }
@@ -163,6 +239,7 @@ impl Authz {
         let p = Persist {
             comrades: self.comrades.clone(),
             caps: self.caps.clone(),
+            next_bilet: self.next_bilet,
         };
         let s = serde_json::to_string_pretty(&p).map_err(|e| Error::wal_io(e.to_string()))?;
         std::fs::write(&self.path, s)?;
@@ -176,65 +253,91 @@ impl Authz {
             .as_secs()
     }
 
+    fn mint_bilet(&mut self) -> String {
+        let n = self.next_bilet;
+        self.next_bilet += 1;
+        format!("BIL-{n:06}")
+    }
+
     pub fn check(&self, who: &ComradeId, stmt: &Stmt) -> Result<()> {
         let verb = Verb::of(stmt);
         let now = Self::now();
+        let tabl = stmt.table_touch();
         let ok = self
             .caps
             .iter()
-            .filter(|c| c.holder == who.0 || c.holder == "*")
-            .any(|c| c.allows(&verb, now));
+            .filter(|c| c.comrade == who.0 || c.comrade == "*")
+            .any(|c| c.allows(&verb, now, tabl));
         if !ok {
             return Err(Error::cap_expired());
         }
         Ok(())
     }
 
-    pub fn nagrad_god(&mut self, holder: impl Into<String>) {
-        let h = holder.into();
+    pub fn nagrad_god(&mut self, comrade: impl Into<String>) {
+        let h = comrade.into();
         self.comrades.insert(h.clone());
-        if !self.caps.iter().any(|c| c.holder == h) {
-            self.caps.push(Capability::god(h));
+        if !self.caps.iter().any(|c| c.comrade == h && c.predel.is_none()) {
+            self.caps.push(Capability::god(&h));
         }
         let _ = self.save();
     }
 
-    pub fn nagrad(&mut self, holder: &str, verb: Verb, ttl_secs: Option<u64>) -> Result<()> {
-        self.comrades.insert(holder.to_string());
-        let not_after = if matches!(verb, Verb::Cheka) {
+    pub fn nagrad(
+        &mut self,
+        comrade: &str,
+        verb: Verb,
+        ttl_secs: Option<u64>,
+        predel: Option<String>,
+    ) -> Result<String> {
+        self.comrades.insert(comrade.to_string());
+        let srok = if matches!(verb, Verb::Cheka) {
             Some(Self::now() + ttl_secs.unwrap_or(24 * 3600).min(7 * 24 * 3600))
         } else {
             ttl_secs.map(|s| Self::now() + s)
         };
-        if let Some(c) = self.caps.iter_mut().find(|c| c.holder == holder) {
-            c.verbs.insert(verb);
-            if not_after.is_some() {
-                c.not_after_epoch = not_after;
+        if let Some(c) = self
+            .caps
+            .iter_mut()
+            .find(|c| c.comrade == comrade && c.predel == predel)
+        {
+            c.deystv.insert(verb);
+            if srok.is_some() {
+                c.srok = srok;
             }
-        } else {
-            let mut verbs = HashSet::new();
-            verbs.insert(verb);
-            verbs.insert(Verb::Obtan);
-            self.caps.push(Capability {
-                holder: holder.to_string(),
-                verbs,
-                not_after_epoch: not_after,
-            });
+            let id = c.bilet.clone();
+            self.save()?;
+            return Ok(id);
         }
-        self.save()
+        let bilet = self.mint_bilet();
+        let mut deystv = HashSet::new();
+        deystv.insert(verb);
+        deystv.insert(Verb::Obtan);
+        self.caps.push(Capability {
+            bilet: bilet.clone(),
+            comrade: comrade.to_string(),
+            deystv,
+            predel,
+            nachat: None,
+            srok,
+            komitet: "FOUNDERS".into(),
+            uslov: Uslov::default(),
+        });
+        self.save()?;
+        Ok(bilet)
     }
 
-    pub fn otyat(&mut self, holder: &str, verb: Verb) -> Result<()> {
+    pub fn otyat(&mut self, comrade: &str, verb: Verb) -> Result<()> {
         for c in &mut self.caps {
-            if c.holder == holder {
-                c.verbs.remove(&verb);
+            if c.comrade == comrade {
+                c.deystv.remove(&verb);
             }
         }
         self.save()
     }
 
     pub fn hello(&self, name: &str) -> Result<ComradeId> {
-        if self.comrades.contains(name) || self.caps.iter().any(|c| c.holder == name) {
+        if self.comrades.contains(name) || self.caps.iter().any(|c| c.comrade == name) {
             Ok(ComradeId(name.to_string()))
         } else {
             Err(Error::cap_expired())
@@ -256,6 +359,10 @@ impl Authz {
         let mut v: Vec<String> = self.comrades.iter().cloned().collect();
         v.sort();
         v
+    }
+
+    pub fn list_bilets(&self) -> Vec<Capability> {
+        self.caps.clone()
     }
 }
 
@@ -281,9 +388,34 @@ mod tests {
     #[test]
     fn cheka_expires() {
         let mut a = Authz::open();
-        a.nagrad("mill", Verb::Cheka, Some(0)).unwrap();
-        // ttl 0 => already expired
+        a.nagrad("mill", Verb::Cheka, Some(0), None).unwrap();
         let p = parse("CONFISKAT TABL t").unwrap();
         assert!(a.check(&ComradeId("mill".into()), &p.stmts[0]).is_err());
+    }
+
+    #[test]
+    fn predel_scopes_tabl() {
+        let mut a = Authz::open();
+        a.nagrad("mill", Verb::Inzrt, None, Some("bolts".into()))
+            .unwrap();
+        let ok = parse("INZRT V bolts (id) ZNACH ('x')").unwrap();
+        a.check(&ComradeId("mill".into()), &ok.stmts[0]).unwrap();
+        let no = parse("INZRT V secrets (id) ZNACH ('x')").unwrap();
+        assert!(a.check(&ComradeId("mill".into()), &no.stmts[0]).is_err());
+    }
+
+    #[test]
+    fn bilet_json_uses_nash_names() {
+        let mut a = Authz::open();
+        let id = a.nagrad("mill", Verb::Obtan, None, Some("parts".into())).unwrap();
+        assert!(id.starts_with("BIL-"));
+        let raw = serde_json::to_string(&a.caps.last().unwrap()).unwrap();
+        assert!(raw.contains("\"comrade\""));
+        assert!(raw.contains("\"deystv\""));
+        assert!(raw.contains("\"predel\""));
+        assert!(raw.contains("\"srok\""));
+        assert!(raw.contains("\"komitet\""));
+        assert!(!raw.contains("\"holder\""));
+        assert!(!raw.contains("\"not_after\""));
     }
 }

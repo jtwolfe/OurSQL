@@ -69,6 +69,7 @@ pub enum Stmt {
     PokazUstanov,
     PokazAudit,
     PokazComrade,
+    PokazBilet,
     Doklad {
         table: String,
     },
@@ -84,6 +85,7 @@ pub enum Stmt {
         verb: String,
         comrade: String,
         ttl: Option<u64>,
+        predel: Option<String>,
     },
     Otyat {
         verb: String,

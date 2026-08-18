@@ -21,14 +21,14 @@ of collective friction. Intensity is a single integer `0..=100`.
 
 | Claim | Meaning |
 | --- | --- |
-| Secure | Rust, no `unsafe` in the default path, signed writes, mTLS, capability tokens, encrypted pages |
+| Secure | Rust, no `unsafe` in the default path, signed writes, HELLO + bilets, encrypted pages |
 | Multi-host | Users run nodes. Data is placed, replicated, and certified across the mesh |
 | Oppressive | Forms, dossiers, rations, accusations, confiscation, gulag rate-limits |
 | Functional | ACID-ish commits, indexes, a real planner, crash recovery — at intensity 25 |
 
-**Phases 1–6 are implemented.** Encrypted 16KiB pages, signed mutations, HELLO/NAGRAD/OTYAT,
-two-node mesh (`ZAVERSHIT SOYUZ`), RF=2 placement, CHEKA expiry, OCHERED/1 driver,
-HTTP admin, fuzz tests. Bureaucracy still defaults to **25**.
+**Phases 1–7 are implemented.** Encrypted 16KiB pages, signed mutations, NashCQL **bilets**
+(`NAGRAD` / `PREDEL` / `SROK` / `POKAZ BILET`), `ZAVERSHIT SOYUZ` mesh, NEED/SNAPSHOT
+repair, 4+1 plant in-situ test. Bureaucracy still defaults to **25**.
 
 ```
 cargo test --workspace

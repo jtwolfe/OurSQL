@@ -6,6 +6,7 @@
 
 pub mod eval;
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use oursql_authz::{Authz, Verb};
@@ -32,6 +33,7 @@ pub struct Engine {
     pub last_sig: Option<String>,
     pub peers: Vec<String>,
     audit: Vec<String>,
+    seen: HashSet<String>,
 }
 
 impl Engine {
@@ -62,6 +64,7 @@ impl Engine {
             last_sig: None,
             peers: Vec::new(),
             audit: Vec::new(),
+            seen: HashSet::new(),
         })
     }
 
@@ -117,10 +120,7 @@ impl Engine {
     pub fn poll_mesh(&mut self) -> Result<()> {
         let msgs = self.mesh.drain(&self.node_name);
         for msg in msgs {
-            let recs: Vec<WalRec> = serde_json::from_str(&msg.recs_json)
-                .map_err(|e| Error::recovery_failed(e.to_string()))?;
-            self.sklad.apply_remote(&recs)?;
-            self.audit("APPLY", &msg.from);
+            self.apply_msg(msg)?;
         }
         Ok(())
     }
@@ -149,6 +149,28 @@ impl Engine {
         for p in &self.peers {
             let _ = oursql_consensus::push_peer(p, &msg);
         }
+    }
+
+    pub fn snapshot_msg(&self) -> ApplyMsg {
+        let recs = self.sklad.export_snapshot();
+        let recs_json = serde_json::to_string(&recs).unwrap_or_else(|_| "[]".into());
+        ApplyMsg {
+            from: self.node_name.clone(),
+            seq: self.sklad.last_seq,
+            recs_json,
+            digest: format!("snapshot-{}", self.sklad.last_seq),
+        }
+    }
+
+    pub fn apply_msg(&mut self, msg: ApplyMsg) -> Result<()> {
+        if !self.seen.insert(msg.digest.clone()) {
+            return Ok(());
+        }
+        let recs: Vec<WalRec> = serde_json::from_str(&msg.recs_json)
+            .map_err(|e| Error::recovery_failed(e.to_string()))?;
+        self.sklad.apply_remote(&recs)?;
+        self.audit("APPLY", &msg.from);
+        Ok(())
     }
 
     fn audit(&mut self, verb: &str, note: &str) {
@@ -481,10 +503,20 @@ impl Engine {
                     return Err(Error::bad_keyword("CONFISKAT needs intensity >= 25"));
                 }
                 self.sklad.confiskat(&table)?;
+                self.sklad.last_commit_recs = vec![oursql_storage::WalRec::Confiskat {
+                    kollektiv: self.sklad.kollektiv.clone(),
+                    table: table.clone(),
+                }];
+                self.publish_commit();
                 Ok(Outcome::empty().with_notice(format!("CONFISKAT {table}")))
             }
             Stmt::Osvobod { table } => {
                 self.sklad.osvobod(&table)?;
+                self.sklad.last_commit_recs = vec![oursql_storage::WalRec::Osvobod {
+                    kollektiv: self.sklad.kollektiv.clone(),
+                    table: table.clone(),
+                }];
+                self.publish_commit();
                 Ok(Outcome::empty())
             }
             Stmt::PokazTabl => {
@@ -572,11 +604,52 @@ impl Engine {
                 self.comrade = self.authz.hello(&comrade)?;
                 Ok(Outcome::empty().with_notice(format!("HELLO {}", self.comrade)))
             }
-            Stmt::Nagrad { verb, comrade, ttl } => {
+            Stmt::Nagrad {
+                verb,
+                comrade,
+                ttl,
+                predel,
+            } => {
                 let v = Verb::parse(&verb)?;
-                self.authz.nagrad(&comrade, v, ttl)?;
+                let bilet = self.authz.nagrad(&comrade, v, ttl, predel.clone())?;
                 self.audit("NAGRAD", &comrade);
-                Ok(Outcome::empty().with_notice(format!("NAGRAD {verb} {comrade}")))
+                Ok(Outcome::empty().with_notice(format!("NAGRAD {bilet} {verb} {comrade}")))
+            }
+            Stmt::PokazBilet => {
+                let rows = self
+                    .authz
+                    .list_bilets()
+                    .into_iter()
+                    .map(|c| {
+                        let deystv = c
+                            .deystv
+                            .iter()
+                            .map(|v| v.as_nash().to_string())
+                            .collect::<Vec<_>>()
+                            .join(",");
+                        vec![
+                            Value::Tekst(c.bilet),
+                            Value::Tekst(c.comrade),
+                            Value::Tekst(deystv),
+                            Value::Tekst(c.predel.unwrap_or_else(|| "*".into())),
+                            Value::Tekst(c.srok.map(|s| s.to_string()).unwrap_or_else(|| "NYET".into())),
+                            Value::Tekst(c.komitet),
+                        ]
+                    })
+                    .collect();
+                Ok(Outcome::Rows {
+                    columns: vec![
+                        "bilet".into(),
+                        "comrade".into(),
+                        "deystv".into(),
+                        "predel".into(),
+                        "srok".into(),
+                        "komitet".into(),
+                    ],
+                    rows,
+                    partial: false,
+                    notice: None,
+                })
             }
             Stmt::Otyat { verb, comrade } => {
                 let v = Verb::parse(&verb)?;
