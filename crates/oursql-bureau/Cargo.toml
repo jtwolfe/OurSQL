@@ -1,0 +1,12 @@
+[package]
+name = "oursql-bureau"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OurSQL bureaucracy overlay (intensity 0..=100)"
+
+[lints]
+workspace = true
+
+[dependencies]
+oursql-core.workspace = true

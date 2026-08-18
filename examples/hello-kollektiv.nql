@@ -1,0 +1,18 @@
+-- hello-kollektiv.nql
+-- ASCII NashCQL. Typeable on a US keyboard.
+
+ZANIM sklad;
+
+MANUFAKTUR TABL bolts (
+  id    NARODKEY,
+  plant TEKST NYET PUSTO,
+  qty   CELIY NYET PUSTO
+);
+
+INZRT V bolts (id, plant, qty)
+ZNACH ('NAR-001', 'brisbane-se', 500)
+SAMOKRIT 'quota for the south depot';
+
+OBTAN plant, qty IZ bolts GIVEN qty > 0 LINEUP plant RATION 20;
+
+ZAVERSHIT LOCAL;

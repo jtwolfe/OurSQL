@@ -1,0 +1,12 @@
+[package]
+name = "oursql-nashcql"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "NashCQL keywords and (later) parser"
+
+[lints]
+workspace = true
+
+[dependencies]
+oursql-core.workspace = true
