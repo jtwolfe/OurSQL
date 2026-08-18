@@ -23,6 +23,7 @@ TARGETS=(
   powerpc64le-unknown-linux-gnu
   s390x-unknown-linux-gnu
   loongarch64-unknown-linux-gnu
+  loongarch64-unknown-linux-musl
   wasm32-wasip1
   wasm32-unknown-unknown
   x86_64-pc-windows-gnu
@@ -53,8 +54,13 @@ build_one() {
   mkdir -p "$dest"
   local extra=()
   case "$t" in
-    *-musl|wasm32-*|*-windows-gnullvm)
+    *musl*|wasm32-*|*-windows-gnullvm)
       extra+=(-C linker=rust-lld)
+      ;;
+  esac
+  case "$t" in
+    riscv64gc-unknown-linux-musl|loongarch64-unknown-linux-musl)
+      extra+=(-C target-feature=+crt-static)
       ;;
   esac
   # library-only targets
@@ -72,7 +78,7 @@ build_one() {
   if RUSTFLAGS="${extra[*]}" cargo build --release --target "$t" \
       -p oursql-cli -p oursql-node >"$dest/build.log" 2>&1; then
     mkdir -p "$dest/bin"
-    find "target/$t/release" -maxdepth 1 -type f \( -name oursql -o -name oursqld -o -name 'oursql.exe' -o -name 'oursqld.exe' \) \
+    find "target/$t/release" -maxdepth 1 -type f \( -name oursql -o -name oursqld -o -name 'oursql.exe' -o -name 'oursqld.exe' -o -name 'oursql.wasm' -o -name 'oursqld.wasm' \) \
       -exec cp {} "$dest/bin/" \;
     echo "OK   $t" | tee -a "$summary"
     return 0
