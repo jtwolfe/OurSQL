@@ -1,44 +1,68 @@
-# OurSQL (NashCQL)
+<p align="center">
+  <img src="docs/brand/dolphin.png" width="280" alt="OurSQL mascot: a dolphin in an ushanka with a red star">
+</p>
 
-**The people keep the means of data hosting.**
+<h1 align="center">OurSQL</h1>
 
-OurSQL is a **memory-safe Rust** database designed to run as a **mesh of
-comrade-operated nodes**. There is no single landlord cloud. Each operator
-hosts a slice of the collective store. The query language is **NashCQL**:
-English-shaped verbs that are deliberately mistakable (`PERESTROJ`, `INZRT`,
-`ZAVERSHIT`) and typeable on a US keyboard.
+<p align="center"><strong>The people keep the means of data hosting.</strong></p>
 
-It is **secure by construction** and **oppressive by policy**. The engine is
-correct. The bureaucracy is the product.
+<p align="center">
+  A Rust database you run yourself.<br>
+  Queried in <strong>NashCQL</strong>. Certified by a mesh of plants.<br>
+  Bureaucracy is a crate. Default intensity <strong>25</strong>.
+</p>
 
-Default policy intensity is **25%** -- usable for real work, with a thin layer
-of collective friction. Intensity is a single integer `0..=100`.
+---
 
-> Title note: *NashCQL* is the US-keyboard rendering of "Nash SQL"
-> ("our SQL"). Docs use ASCII only.
+OurSQL is a **memory-safe** store for comrades who keep their own disks.
+There is no landlord cloud. Each operator hosts a slice of the kollektiv.
+The query language is **NashCQL**: English after a long march
+(`PERESTROJ`, `INZRT`, `ZAVERSHIT`), typeable on a US keyboard.
+
+The engine is correct. The satire is specified. Intensity is one integer
+`0..=100`. At **25** a competent app with retry can store and retrieve
+rows. At **0** the bureau only talks. At **100** you are in a demo.
+
+> *NashCQL* is the US-keyboard rendering of "Nash SQL" ("our SQL").
+> Official docs are ASCII. The dolphin does not speak.
 
 ## What this is
 
 | Claim | Meaning |
 | --- | --- |
-| Secure | Rust, no `unsafe` in the default path, signed writes, HELLO + bilets, encrypted pages |
-| Multi-host | Users run nodes. Data is placed, replicated, and certified across the mesh |
-| Oppressive | Forms, dossiers, rations, accusations, confiscation, gulag rate-limits |
-| Functional | ACID-ish commits, indexes, a real planner, crash recovery -- at intensity 25 |
-
-**Phases 1-11 are implemented.** Encrypted 16KiB pages, signed mutations, NashCQL **bilets**, a B+tree pager, group commit, HELLO PODPIS, BRIGADE/PRIOKAZ
-(`NAGRAD` / `PREDEL` / `SROK` / `POKAZ BILET`), `ZAVERSHIT SOYUZ` mesh, NEED/SNAPSHOT
-repair, 4+1 plant in-situ test, RF placement, komitet, uslov, kill -9. Bureaucracy still defaults to **25**.
+| Secure | Rust, no `unsafe` on the default path, signed writes, HELLO + bilets, encrypted 16 KiB pages |
+| Multi-host | You run `oursqld`. Data is placed, repaired, and certified across plants |
+| Oppressive | Dossiers, rations, accusations, confiscation, gulag rate limits |
+| Functional | WAL, B+tree, group commit, crash recovery, planner -- at intensity 25 |
 
 ```
 cargo test --workspace
 cargo build --release -p oursql-cli -p oursql-node
 ./target/release/oursql --data /tmp/sklad --intensity 0 -f examples/hello-kollektiv.nql
-bash scripts/build-all-arches.sh
 ```
 
-See [`docs/15-brigades.md`](docs/15-brigades.md). Implementation plan:
-[`docs/12-implementation-plan.md`](docs/12-implementation-plan.md).
+Three plants, flags, and backup: [13 Ops](docs/13-ops-and-hosting.md).
+Brigades: [15](docs/15-brigades.md). Plan: [12](docs/12-implementation-plan.md).
+
+## Tiny taste
+
+```sql
+ZANIM sklad;
+MANUFAKTUR TABL parts (
+  id        NARODKEY,
+  name      TEKST NYET PUSTO,
+  qty       CELIY,
+  SOLIDARITY (depot_id) IZ depots (id)
+);
+
+INZRT V parts (id, name, qty) ZNACH ('p1', 'bolt', 40)
+  SAMOKRIT 'serves the inventory brigade';
+
+OBTAN name, qty IZ parts GIVEN qty > 0 LINEUP name RATION 20;
+```
+
+Decadent SQL is rewritten at intensity `<= 40` and may emit
+`NOTICE 1901: bourgeois keywords tolerated at intensity 25`.
 
 ## Docs
 
@@ -62,32 +86,12 @@ See [`docs/15-brigades.md`](docs/15-brigades.md). Implementation plan:
 | [15 Brigades](docs/15-brigades.md) | Crate segmentation |
 | [16 Distro](docs/16-dist.md) | Multi-arch bins |
 | [Glossary](docs/glossary.md) | Terms |
-
-## Tiny taste
-
-```sql
-ZANIM sklad;
-MANUFAKTUR TABL parts (
-  id        NARODKEY,
-  name      TEKST NYET PUSTO,
-  qty       CELIY,
-  SOLIDARITY (depot_id) IZ depots (id)
-);
-
-INZRT V parts (id, name, qty) ZNACH ('p1', 'bolt', 40)
-  SAMOKRIT 'serves the inventory brigade';
-
-OBTAN name, qty IZ parts GIVEN qty > 0 LINEUP name RATION 20;
-```
-
-Standard SQL is accepted as a **decadent dialect**. The planner rewrites it
-and may emit a warning: `NOTICE 1901: bourgeois keywords tolerated at intensity 25`.
+| [Brand](docs/brand.md) | Dolphin, palette, files |
 
 ## Status
 
-Phases 1-11 are in this tree. See [12](docs/12-implementation-plan.md).
-Stored procedures, a SQL compatibility pack, a geo pin UI, and coins
-are explicitly later.
+Phases 1-11 are in this tree. Stored procedures, a SQL compatibility
+pack, a geo pin UI, and coins are explicitly later.
 
 ## License
 
