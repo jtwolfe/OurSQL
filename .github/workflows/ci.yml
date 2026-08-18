@@ -14,5 +14,10 @@ jobs:
         run: cargo test --workspace
       - name: tls
         run: cargo test -p oursql-node --features tls
-      - name: deny
-        run: cargo install cargo-deny --locked && cargo deny check || true || true || true || true
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
