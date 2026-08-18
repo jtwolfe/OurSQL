@@ -2,13 +2,11 @@
 
 #![cfg(feature = "tls")]
 
-use std::fs::File;
-use std::io::BufReader;
 use std::path::Path;
 use std::sync::Arc;
 
 use rustls::ServerConfig;
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
 
 use oursql_core::{Error, Result};
 
@@ -39,17 +37,13 @@ pub fn server_config(cert: &Path, key: &Path, ca: Option<&Path>) -> Result<Arc<S
 }
 
 fn load_certs(path: &Path) -> Result<Vec<CertificateDer<'static>>> {
-    let mut r = BufReader::new(File::open(path)?);
-    rustls_pemfile::certs(&mut r)
-        .collect::<std::result::Result<Vec<_>, _>>()
+    CertificateDer::pem_file_iter(path)
+        .and_then(|it| it.collect())
         .map_err(|e| Error::wal_io(e.to_string()))
 }
 
 fn load_key(path: &Path) -> Result<PrivateKeyDer<'static>> {
-    let mut r = BufReader::new(File::open(path)?);
-    rustls_pemfile::private_key(&mut r)
-        .map_err(|e| Error::wal_io(e.to_string()))?
-        .ok_or_else(|| Error::wal_io("tls key missing"))
+    PrivateKeyDer::from_pem_file(path).map_err(|e| Error::wal_io(e.to_string()))
 }
 
 pub fn accept(

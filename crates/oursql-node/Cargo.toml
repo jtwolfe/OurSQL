@@ -25,11 +25,10 @@ serde_json.workspace = true
 [dev-dependencies]
 oursql-driver.workspace = true
 rustls = { version = "0.23", default-features = false, features = ["std", "ring"] }
-rustls-pemfile = "2"
 
 [features]
 default = []
-tls = ["dep:rustls", "dep:rustls-pemfile"]
+tls = ["dep:rustls"]
 
 [dependencies.rustls]
 version = "0.23"
@@ -37,6 +36,3 @@ optional = true
 default-features = false
 features = ["std", "ring"]
 
-[dependencies.rustls-pemfile]
-version = "2"
-optional = true

@@ -36,12 +36,12 @@ fn rustls_loads_self_signed_pem() {
 fn oursql_node_tls_load(cert: &std::path::Path, key: &std::path::Path) {
     // Re-export via the same module path the bin uses by compiling tls.rs logic:
     // we call rustls the same way as src/tls.rs.
-    let mut cr = std::io::BufReader::new(std::fs::File::open(cert).unwrap());
-    let certs: Vec<_> = rustls_pemfile::certs(&mut cr)
+    use rustls::pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
+    let certs: Vec<_> = CertificateDer::pem_file_iter(cert)
+        .unwrap()
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
-    let mut kr = std::io::BufReader::new(std::fs::File::open(key).unwrap());
-    let key = rustls_pemfile::private_key(&mut kr).unwrap().unwrap();
+    let key = PrivateKeyDer::from_pem_file(key).unwrap();
     let cfg = rustls::ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(certs, key)
