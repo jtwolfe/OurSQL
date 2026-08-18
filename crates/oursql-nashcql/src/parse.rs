@@ -4,7 +4,7 @@ use oursql_core::{Column, ColumnType, CommitKind, Error, Result, Value};
 
 use crate::ast::{BinOp, Expr, SelectItem, Stmt, UnaryOp};
 use crate::keywords::rewrite_bourgeois;
-use crate::lex::{lex, Tok};
+use crate::lex::{Tok, lex};
 
 pub struct Parsed {
     pub stmts: Vec<Stmt>,
@@ -122,6 +122,7 @@ impl Parser {
                 "OTYAT" => self.otyat(),
                 "HELLO" => self.hello(),
                 "PETITION" => self.petition(),
+                "LEAVE" => self.leave_view(),
                 "ZAPOR" => {
                     self.i += 1;
                     let _ = self.try_kw("TABL");
@@ -601,6 +602,9 @@ impl Parser {
         let comrade = self.eat_ident()?;
         let mut predel = None;
         let mut ttl = None;
+        let mut ration = None;
+        let mut max_rows = None;
+        let mut samokrit = false;
         loop {
             if self.try_kw("PREDEL") {
                 predel = Some(self.eat_ident()?);
@@ -608,6 +612,18 @@ impl Parser {
             }
             if self.try_kw("SROK") {
                 ttl = Some(self.eat_int()? as u64);
+                continue;
+            }
+            if self.try_kw("RATION") {
+                ration = Some(self.eat_int()? as u32);
+                continue;
+            }
+            if self.try_kw("MAXROWS") {
+                max_rows = Some(self.eat_int()? as u64);
+                continue;
+            }
+            if self.try_kw("SAMOKRIT") {
+                samokrit = true;
                 continue;
             }
             if matches!(self.peek(), Some(Tok::Int(_))) {
@@ -621,6 +637,18 @@ impl Parser {
             comrade,
             ttl,
             predel,
+            ration,
+            max_rows,
+            samokrit,
+        })
+    }
+
+    fn leave_view(&mut self) -> Result<Stmt> {
+        self.eat_kw("LEAVE")?;
+        let _ = self.try_kw("COMRADE");
+        let _ = self.try_kw("NODE");
+        Ok(Stmt::Leave {
+            node: self.eat_ident()?,
         })
     }
 

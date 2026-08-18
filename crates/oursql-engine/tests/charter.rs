@@ -76,3 +76,73 @@ fn wal_sig_survives_reopen() {
     let mut e = Engine::open_with(&dir, Intensity::zero(), "founder").unwrap();
     assert_eq!(e.execute("OBTAN id IZ t").unwrap().row_count(), 1);
 }
+
+#[test]
+fn mill_cannot_nagrad() {
+    let mut e = Engine::open_with(tmp(), Intensity::zero(), "founder").unwrap();
+    e.execute("NAGRAD ADMIN NA COMRADE mill").unwrap();
+    e.execute("HELLO COMRADE mill").unwrap();
+    let err = e.execute("NAGRAD OBTAN NA COMRADE spy").unwrap_err();
+    assert_eq!(err.code, 2111, "{err}");
+}
+
+#[test]
+fn nagrad_komitet_then_mill_can_nagrad() {
+    let mut e = Engine::open_with(tmp(), Intensity::zero(), "founder").unwrap();
+    e.execute("NAGRAD KOMITET NA COMRADE mill").unwrap();
+    e.execute("NAGRAD ADMIN NA COMRADE mill").unwrap();
+    e.execute("HELLO COMRADE mill").unwrap();
+    e.execute("NAGRAD OBTAN NA COMRADE spy").unwrap();
+}
+
+#[test]
+fn uslov_max_rows_and_ration() {
+    let mut e = Engine::open_with(tmp(), Intensity::zero(), "founder").unwrap();
+    e.execute("MANUFAKTUR TABL t (id NARODKEY)").unwrap();
+    e.execute("INZRT V t (id) ZNACH ('a'), ('b'), ('c')")
+        .unwrap();
+    e.execute("NAGRAD OBTAN NA COMRADE mill MAXROWS 1 RATION 20")
+        .unwrap();
+    e.execute("HELLO COMRADE mill").unwrap();
+    let out = e.execute("OBTAN id IZ t").unwrap();
+    assert_eq!(out.row_count(), 1);
+}
+
+#[test]
+fn join_leave_epoch_and_rf() {
+    use oursql_consensus::LocalMesh;
+    let hub = LocalMesh::new();
+    let da = tmp();
+    let db = tmp();
+    let dc = tmp();
+    let mut a = Engine::open_with(&da, Intensity::zero(), "founder").unwrap();
+    let mut b = Engine::open_with(&db, Intensity::zero(), "founder").unwrap();
+    let mut c = Engine::open_with(&dc, Intensity::zero(), "founder").unwrap();
+    a.attach_mesh(hub.clone(), "a");
+    b.attach_mesh(hub.clone(), "b");
+    c.attach_mesh(hub, "c");
+    a.execute("NAGRAD SOYUZ NA COMRADE extra").unwrap();
+    assert!(a.mesh.members().contains(&"extra".into()));
+    let epoch = a.mesh.epoch();
+    a.execute("LEAVE COMRADE extra").unwrap();
+    assert!(a.mesh.epoch() > epoch);
+    a.execute("USTANOV rf = 2").unwrap();
+    a.execute("NACHAT").unwrap();
+    a.execute("MANUFAKTUR TABL t (id NARODKEY, n CELIY)")
+        .unwrap();
+    a.execute("INZRT V t (id, n) ZNACH ('k1', 1)").unwrap();
+    a.execute("ZAVERSHIT SOYUZ").unwrap();
+    b.poll_mesh().unwrap();
+    c.poll_mesh().unwrap();
+    let count = |e: &mut Engine| match e.execute("OBTAN n IZ t") {
+        Ok(o) => o.row_count(),
+        Err(err) if err.code == 1803 => 0,
+        Err(err) => panic!("{err}"),
+    };
+    let na = count(&mut a);
+    let nb = count(&mut b);
+    let nc = count(&mut c);
+    assert_eq!(na, 1);
+    let copies = na + nb + nc;
+    assert!(copies >= 2 && copies <= 3, "a={na} b={nb} c={nc}");
+}

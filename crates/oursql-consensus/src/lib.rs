@@ -65,8 +65,34 @@ impl LocalMesh {
     pub fn join(&self, node: &str) {
         let mut g = self.inner.lock().expect("mesh");
         let v = g.views.entry("default".into()).or_default();
-        v.members.insert(node.to_string());
+        if v.members.insert(node.to_string()) {
+            v.epoch = v.epoch.saturating_add(1);
+        }
         g.inboxes.entry(node.to_string()).or_default();
+    }
+
+    pub fn leave(&self, node: &str) -> Result<u64> {
+        let mut g = self.inner.lock().expect("mesh");
+        let v = g.views.entry("default".into()).or_default();
+        if !v.members.contains(node) {
+            return Err(Error::not_in_view());
+        }
+        if v.members.len() <= 1 {
+            return Err(Error::join_refused("cannot LEAVE the last plant"));
+        }
+        v.members.remove(node);
+        v.epoch = v.epoch.saturating_add(1);
+        Ok(v.epoch)
+    }
+
+    pub fn epoch(&self) -> u64 {
+        self.inner
+            .lock()
+            .expect("mesh")
+            .views
+            .get("default")
+            .map(|v| v.epoch)
+            .unwrap_or(0)
     }
 
     pub fn certify(&self, node: &str, stmt: &str, kind: CommitKind) -> Result<[u8; 32]> {
@@ -78,7 +104,7 @@ impl LocalMesh {
                 v.members.insert(node.to_string());
             }
             if !v.members.contains(node) {
-                return Err(Error::mesh(2101, "NOT_IN_VIEW", "node not in view"));
+                return Err(Error::not_in_view());
             }
         }
         g.certified.insert(d);
@@ -87,11 +113,19 @@ impl LocalMesh {
     }
 
     pub fn publish(&self, from: &str, msg: ApplyMsg) -> usize {
+        self.publish_to(from, msg, &[])
+    }
+
+    pub fn publish_to(&self, from: &str, msg: ApplyMsg, targets: &[String]) -> usize {
         let mut g = self.inner.lock().expect("mesh");
         let mut n = 0;
-        let names: Vec<String> = g.inboxes.keys().cloned().collect();
+        let names: Vec<String> = if targets.is_empty() {
+            g.inboxes.keys().cloned().collect()
+        } else {
+            targets.to_vec()
+        };
         for name in names {
-            if name != from {
+            if name != from && g.inboxes.contains_key(&name) {
                 g.inboxes.get_mut(&name).unwrap().push(msg.clone());
                 n += 1;
             }
@@ -252,6 +286,24 @@ mod tests {
         );
         assert_eq!(m.drain("b").len(), 1);
         assert!(m.drain("a").is_empty());
+    }
+
+    #[test]
+    fn leave_bumps_epoch() {
+        let m = LocalMesh::new();
+        m.join("a");
+        m.join("b");
+        let e0 = m.epoch();
+        m.leave("b").unwrap();
+        assert!(m.epoch() > e0);
+        assert_eq!(m.members().len(), 1);
+    }
+
+    #[test]
+    fn leave_last_refused() {
+        let m = LocalMesh::new();
+        m.join("a");
+        assert_eq!(m.leave("a").unwrap_err().code, 2104);
     }
 
     #[test]

@@ -96,3 +96,19 @@ Unsigned mutations are refused (`2109 UNSIGNED_MUTATION`).
 - `COMRADE ''@'%'` anonymous.
 - Shared password tables as the primary factor.
 - OAuth inside the engine. Put that in the app.
+
+
+## Komitet
+
+`NAGRAD` is not a free gift. The issuer must sit on the komitet
+(founders start on it). `NAGRAD KOMITET NA COMRADE mill` adds a voter.
+`OTYAT KOMITET IZ COMRADE mill` removes one; the last seat cannot leave.
+A mill with ADMIN but no seat gets `2111 NOT_KOMITET`.
+
+## Uslov on a bilet
+
+`NAGRAD OBTAN NA COMRADE mill RATION 20 MAXROWS 5 SAMOKRIT`
+
+- `RATION` — that comrade's statement budget (session)
+- `MAXROWS` — OBTAN is truncated (partial notice)
+- `SAMOKRIT` — mutations need a confession

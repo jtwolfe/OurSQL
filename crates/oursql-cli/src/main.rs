@@ -56,8 +56,8 @@ fn run() -> oursql_core::Result<()> {
         }
     }
 
-    std::env::set_var("OURL_NO_SLEEP", "1");
     let mut eng = Engine::open_with(&data, intensity, comrade)?;
+    eng.bureau.skip_sleep = true;
 
     if let Some(sql) = command {
         exec_batch(&mut eng, &sql)?;

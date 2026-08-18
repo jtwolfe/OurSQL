@@ -9,14 +9,14 @@ pub mod eval;
 use std::collections::HashSet;
 use std::path::Path;
 
-use oursql_authz::{Authz, Verb};
+use oursql_authz::{Authz, Uslov, Verb};
 use oursql_bureau::Bureau;
 use oursql_consensus::{ApplyMsg, LocalMesh};
 use oursql_core::{
     Column, CommitKind, ComradeId, Dossier, Error, Intensity, Outcome, Result, Value,
 };
 use oursql_crypto::{hex, mutation_digest};
-use oursql_nashcql::{parse, BinOp, Expr, SelectItem, Stmt};
+use oursql_nashcql::{BinOp, Expr, SelectItem, Stmt, parse};
 use oursql_storage::{Sklad, WalRec};
 
 use crate::eval::{eval, truthy};
@@ -34,6 +34,7 @@ pub struct Engine {
     pub peers: Vec<String>,
     pub binds: Vec<Value>,
     pub last_plan: String,
+    pub rf: usize,
     audit: Vec<String>,
     seen: HashSet<String>,
 }
@@ -67,6 +68,7 @@ impl Engine {
             peers: Vec::new(),
             binds: Vec::new(),
             last_plan: "SEQSCAN".into(),
+            rf: 0,
             audit: Vec::new(),
             seen: HashSet::new(),
         })
@@ -146,14 +148,28 @@ impl Engine {
             recs_json,
             digest: hex(&d),
         };
-        let mesh_acks = self.mesh.publish(&self.node_name, msg.clone());
+        let keys = narodkeys_of(recs);
+        let targets = if self.rf == 0 || keys.is_empty() {
+            Vec::new()
+        } else {
+            let mut t = HashSet::new();
+            for k in &keys {
+                t.extend(self.mesh.owners(k, self.rf));
+            }
+            t.into_iter().collect::<Vec<_>>()
+        };
+        let mesh_acks = self.mesh.publish_to(&self.node_name, msg.clone(), &targets);
         let mut acks = 1 + mesh_acks;
         for p in &self.peers {
             if oursql_consensus::push_peer(p, &msg).unwrap_or(false) {
                 acks += 1;
             }
         }
-        let n = self.mesh.members().len().max(1 + self.peers.len());
+        let n = if !targets.is_empty() {
+            targets.len().max(1)
+        } else {
+            self.mesh.members().len().max(1 + self.peers.len())
+        };
         let q = n / 2 + 1;
         if n > 1 && acks < q {
             return Err(Error::below_quorum());
@@ -357,7 +373,7 @@ impl Engine {
                         notice: Some(format!("plan {plan_key} repaid")),
                     });
                 }
-                let partial = self.bureau.should_partial(&Stmt::Obtan {
+                let mut partial = self.bureau.should_partial(&Stmt::Obtan {
                     distinct,
                     proj: proj.clone(),
                     from: from.clone(),
@@ -577,6 +593,13 @@ impl Engine {
                     }
                 }
 
+                let uslov = self.authz.uslov_for(&self.comrade.0);
+                if let Some(max) = uslov.max_rows {
+                    if out_rows.len() as u64 > max {
+                        out_rows.truncate(max as usize);
+                        partial = true;
+                    }
+                }
                 Ok(Outcome::Rows {
                     columns: out_cols,
                     rows: out_rows,
@@ -595,9 +618,8 @@ impl Engine {
             Stmt::Zavershit(kind) => {
                 let tx = self.sklad.commit(kind)?;
                 if matches!(kind, CommitKind::Soyuz | CommitKind::Cheka) {
-                    let _ = self
-                        .mesh
-                        .certify(&self.node_name, &format!("tx-{tx}"), kind);
+                    self.mesh
+                        .certify(&self.node_name, &format!("tx-{tx}"), kind)?;
                     self.publish_commit()?;
                 }
                 Ok(Outcome::Count {
@@ -667,6 +689,15 @@ impl Engine {
                         Value::Tekst("kollektiv".into()),
                         Value::Tekst(self.sklad.kollektiv.clone()),
                     ],
+                    vec![Value::Tekst("rf".into()), Value::Celiy(self.rf as i64)],
+                    vec![
+                        Value::Tekst("epoch".into()),
+                        Value::Celiy(self.mesh.epoch() as i64),
+                    ],
+                    vec![
+                        Value::Tekst("view".into()),
+                        Value::Tekst(self.mesh.members().join(",")),
+                    ],
                 ],
                 partial: false,
                 notice: None,
@@ -722,10 +753,13 @@ impl Engine {
                 Ok(Outcome::Razbor { text })
             }
             Stmt::Ustanov { key, value } => {
-                if key.to_ascii_lowercase().contains("intensity") {
+                let k = key.to_ascii_lowercase();
+                if k.contains("intensity") {
                     let n: u8 = value.parse().unwrap_or(25);
                     self.bureau.intensity =
                         Intensity::new(n).map_err(|_| Error::intensity_denied())?;
+                } else if k == "rf" {
+                    self.rf = value.parse().unwrap_or(0);
                 }
                 Ok(Outcome::empty())
             }
@@ -767,16 +801,55 @@ impl Engine {
                 comrade,
                 ttl,
                 predel,
+                ration,
+                max_rows,
+                samokrit,
             } => {
+                let up = verb.to_ascii_uppercase();
+                if up == "JOIN" || up == "SOYUZ" {
+                    if !self.authz.in_komitet(&self.comrade.0) {
+                        return Err(Error::not_komitet());
+                    }
+                    self.mesh.join(&comrade);
+                    self.audit("JOIN", &comrade);
+                    return Ok(Outcome::empty()
+                        .with_notice(format!("JOIN {comrade} epoch={}", self.mesh.epoch())));
+                }
+                if up == "KOMITET" {
+                    if !self.authz.in_komitet(&self.comrade.0) {
+                        return Err(Error::not_komitet());
+                    }
+                    self.authz.add_komitet(&comrade)?;
+                    self.audit("KOMITET", &comrade);
+                    return Ok(Outcome::empty().with_notice(format!("KOMITET {comrade}")));
+                }
                 let v = Verb::parse(&verb)?;
-                let bilet = self
-                    .authz
-                    .nagrad(&comrade, v.clone(), ttl, predel.clone())?;
+                let uslov = Uslov {
+                    ration,
+                    max_rows,
+                    samokrit,
+                };
+                let bilet = self.authz.nagrad(
+                    &self.comrade.0,
+                    &comrade,
+                    v.clone(),
+                    ttl,
+                    predel.clone(),
+                    uslov,
+                )?;
                 if matches!(v, Verb::Approve) {
                     self.bureau.grant_approval(&comrade);
                 }
                 self.audit("NAGRAD", &comrade);
                 Ok(Outcome::empty().with_notice(format!("NAGRAD {bilet} {verb} {comrade}")))
+            }
+            Stmt::Leave { node } => {
+                if !self.authz.in_komitet(&self.comrade.0) {
+                    return Err(Error::not_komitet());
+                }
+                let epoch = self.mesh.leave(&node)?;
+                self.audit("LEAVE", &node);
+                Ok(Outcome::empty().with_notice(format!("LEAVE {node} epoch={epoch}")))
             }
             Stmt::PokazBilet => {
                 let rows = self
@@ -819,6 +892,23 @@ impl Engine {
                 })
             }
             Stmt::Otyat { verb, comrade } => {
+                let up = verb.to_ascii_uppercase();
+                if up == "JOIN" || up == "SOYUZ" {
+                    if !self.authz.in_komitet(&self.comrade.0) {
+                        return Err(Error::not_komitet());
+                    }
+                    let epoch = self.mesh.leave(&comrade)?;
+                    return Ok(
+                        Outcome::empty().with_notice(format!("LEAVE {comrade} epoch={epoch}"))
+                    );
+                }
+                if up == "KOMITET" {
+                    if !self.authz.in_komitet(&self.comrade.0) {
+                        return Err(Error::not_komitet());
+                    }
+                    self.authz.drop_komitet(&comrade)?;
+                    return Ok(Outcome::empty().with_notice(format!("OTYAT KOMITET {comrade}")));
+                }
                 let v = Verb::parse(&verb)?;
                 self.authz.otyat(&comrade, v)?;
                 self.audit("OTYAT", &comrade);
@@ -1231,4 +1321,19 @@ fn extract_eqs(expr: &Expr) -> Vec<(String, Value)> {
         }
         _ => Vec::new(),
     }
+}
+
+fn narodkeys_of(recs: &[WalRec]) -> Vec<String> {
+    let mut out = Vec::new();
+    for r in recs {
+        match r {
+            WalRec::Insert { key, .. }
+            | WalRec::Update { key, .. }
+            | WalRec::Delete { key, .. } => {
+                out.push(key.0.clone());
+            }
+            _ => {}
+        }
+    }
+    out
 }

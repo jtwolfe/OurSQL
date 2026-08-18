@@ -54,6 +54,7 @@ Stable `u16` codes. Clients may switch on the number. Messages are ASCII.
 | 2108 | NODE_BUSY
 | 2109 | PERESTROJ_WAIT
 | 2110 | UNSIGNED_MUTATION
+| 2111 | NOT_KOMITET
 
 ## Client guidance
 

@@ -178,6 +178,9 @@ impl Error {
     pub fn join_refused(msg: impl Into<String>) -> Self {
         Self::mesh(2104, "JOIN_REFUSED", msg)
     }
+    pub fn not_komitet() -> Self {
+        Self::mesh(2111, "NOT_KOMITET", "only the komitet may NAGRAD")
+    }
     pub fn repair_needed() -> Self {
         Self::mesh(2105, "REPAIR_NEEDED", "plant is behind; NEED a snapshot")
     }

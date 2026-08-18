@@ -90,6 +90,12 @@ pub enum Stmt {
         comrade: String,
         ttl: Option<u64>,
         predel: Option<String>,
+        ration: Option<u32>,
+        max_rows: Option<u64>,
+        samokrit: bool,
+    },
+    Leave {
+        node: String,
     },
     Otyat {
         verb: String,
@@ -209,6 +215,7 @@ impl Stmt {
                 | Stmt::ManufakturSpravka { .. }
                 | Stmt::Nagrad { .. }
                 | Stmt::Otyat { .. }
+                | Stmt::Leave { .. }
         )
     }
 

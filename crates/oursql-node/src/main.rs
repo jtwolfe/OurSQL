@@ -7,12 +7,12 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use oursql_consensus::{request_repair, serve_mesh, ApplyMsg};
+use oursql_consensus::{ApplyMsg, request_repair, serve_mesh};
 use oursql_core::{Intensity, Value};
 use oursql_engine::Engine;
 use oursql_wire::{
-    error_payload, outcome_frames, parse_hello, split_statements, welcome_payload, Frame, T_BIND,
-    T_DONE, T_ERROR, T_HELLO, T_PING, T_STMT, T_WELCOME,
+    Frame, T_BIND, T_DONE, T_ERROR, T_HELLO, T_PING, T_STMT, T_WELCOME, error_payload,
+    outcome_frames, parse_hello, split_statements, welcome_payload,
 };
 
 fn main() {

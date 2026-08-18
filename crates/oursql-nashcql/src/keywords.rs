@@ -160,6 +160,14 @@ pub const KEYWORDS: &[Keyword] = &[
         sql: "ROLE",
     },
     Keyword {
+        nash: "LEAVE",
+        sql: "LEAVE",
+    },
+    Keyword {
+        nash: "MAXROWS",
+        sql: "LIMIT",
+    },
+    Keyword {
         nash: "NARODKEY",
         sql: "PRIMARY KEY",
     },

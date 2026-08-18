@@ -8,7 +8,7 @@ use oursql_crypto::NodeIdentity;
 use serde::{Deserialize, Serialize};
 
 use crate::btree::PagePool;
-use crate::page::{pack, read_checkpoint, unpack, PageType, PAGE_SIZE};
+use crate::page::{PAGE_SIZE, PageType, pack, read_checkpoint, unpack};
 use crate::wal::{Wal, WalRec};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

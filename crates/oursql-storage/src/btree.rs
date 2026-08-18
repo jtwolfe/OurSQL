@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use oursql_core::{Error, Result};
 use oursql_crypto::digest;
 
-use crate::page::{pack, unpack, PageType, PAGE_SIZE};
+use crate::page::{PAGE_SIZE, PageType, pack, unpack};
 
 const HDR: usize = 16;
 const POOL_MAX: usize = 256;

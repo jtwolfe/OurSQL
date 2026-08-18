@@ -49,9 +49,11 @@ fn pager_walk_after_checkpoint() {
         e.execute("INZRT V t (id, n) ZNACH ('k', 3)").unwrap();
         e.sklad.checkpoint().unwrap();
         let pages = e.sklad.scan_pages().unwrap();
-        assert!(pages
-            .iter()
-            .any(|(k, _)| k.contains("r:sklad/t/k") || k.contains("__snap")));
+        assert!(
+            pages
+                .iter()
+                .any(|(k, _)| k.contains("r:sklad/t/k") || k.contains("__snap"))
+        );
     }
     let mut e = Engine::open_with(&dir, Intensity::zero(), "founder").unwrap();
     assert_eq!(e.execute("OBTAN n IZ t").unwrap().row_count(), 1);

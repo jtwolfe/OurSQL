@@ -85,6 +85,15 @@
 - RAZBOR prints NARODKEY / SPRAVKA / SEQSCAN; GIVEN uses the pager
 - B+tree insert/split/delete in place; checkpoint is a flush
 
+## Phase 10 — mesh matches the docs — done
+
+- `USTANOV rf = N` places APPLY on `owners(narodkey, N)` (0 = everyone)
+- `NAGRAD SOYUZ NA COMRADE plant` / `LEAVE COMRADE plant` bump the view epoch
+- Komitet is a real set; only members may NAGRAD (`2111 NOT_KOMITET`)
+- `NAGRAD ... RATION n MAXROWS n SAMOKRIT` is enforced
+- `kill -9` after ZAVERSHIT: rows survive reopen
+- Edition 2024; CI `cargo deny check` is no longer `|| true`
+
 ## Explicitly later
 
 - Stored procedures

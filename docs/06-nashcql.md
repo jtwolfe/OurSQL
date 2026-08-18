@@ -160,3 +160,17 @@ No leading digits. No `$`. No unicode letters.
 
 See [14](14-error-catalog.md). Language errors are `18xx`. Bureau errors
 are `19xx`. Storage/consensus are `20xx` / `21xx`.
+
+
+## Membership and uslov
+
+```
+NAGRAD SOYUZ NA COMRADE perth;
+LEAVE COMRADE perth;
+NAGRAD KOMITET NA COMRADE mill;
+NAGRAD OBTAN NA COMRADE mill RATION 20 MAXROWS 5 SAMOKRIT;
+USTANOV rf = 2;
+```
+
+`JOIN` as a word is rewritten to `SOYUZ` (the union). Use `NAGRAD SOYUZ`
+to admit a plant, not `NAGRAD JOIN`.

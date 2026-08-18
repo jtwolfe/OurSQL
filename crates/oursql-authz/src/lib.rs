@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use oursql_core::{ComradeId, Error, Result};
-use oursql_crypto::{hex, KeyPair, NodeIdentity};
+use oursql_crypto::{KeyPair, NodeIdentity, hex};
 use oursql_nashcql::Stmt;
 use serde::{Deserialize, Serialize};
 
@@ -75,7 +75,7 @@ impl Verb {
             | Stmt::PerestrojAdd { .. } => Verb::Ddl,
             Stmt::Confiskat { .. } | Stmt::Osvobod { .. } => Verb::Cheka,
             Stmt::Accuse { .. } => Verb::Accuse,
-            Stmt::Nagrad { .. } | Stmt::Otyat { .. } => Verb::Admin,
+            Stmt::Nagrad { .. } | Stmt::Otyat { .. } | Stmt::Leave { .. } => Verb::Admin,
             _ => Verb::Obtan,
         }
     }
@@ -185,6 +185,8 @@ struct Persist {
     next_bilet: u64,
     #[serde(default)]
     pubkeys: HashMap<String, String>,
+    #[serde(default)]
+    komitet: HashSet<String>,
 }
 
 pub struct Authz {
@@ -194,6 +196,8 @@ pub struct Authz {
     next_bilet: u64,
     path: PathBuf,
     pubkeys: HashMap<String, String>,
+    pub komitet: HashSet<String>,
+    uses: HashMap<String, u32>,
 }
 
 impl Authz {
@@ -210,6 +214,12 @@ impl Authz {
                 next_bilet: p.next_bilet.max(1),
                 path,
                 pubkeys: p.pubkeys,
+                komitet: if p.komitet.is_empty() {
+                    HashSet::from(["founder".into()])
+                } else {
+                    p.komitet
+                },
+                uses: HashMap::new(),
             });
         }
         let founder = "founder".to_string();
@@ -220,6 +230,8 @@ impl Authz {
             next_bilet: 1,
             path,
             pubkeys: HashMap::new(),
+            komitet: HashSet::from([founder.clone()]),
+            uses: HashMap::new(),
         };
         a.save()?;
         Ok(a)
@@ -235,6 +247,8 @@ impl Authz {
             next_bilet: 1,
             path: PathBuf::from("authz.json"),
             pubkeys: HashMap::new(),
+            komitet: HashSet::from([founder.clone()]),
+            uses: HashMap::new(),
         }
     }
 
@@ -247,6 +261,7 @@ impl Authz {
             caps: self.caps.clone(),
             next_bilet: self.next_bilet,
             pubkeys: self.pubkeys.clone(),
+            komitet: self.komitet.clone(),
         };
         let s = serde_json::to_string_pretty(&p).map_err(|e| Error::wal_io(e.to_string()))?;
         std::fs::write(&self.path, s)?;
@@ -266,7 +281,7 @@ impl Authz {
         format!("BIL-{n:06}")
     }
 
-    pub fn check(&self, who: &ComradeId, stmt: &Stmt) -> Result<()> {
+    pub fn check(&mut self, who: &ComradeId, stmt: &Stmt) -> Result<()> {
         let verb = Verb::of(stmt);
         let now = Self::now();
         let tabl = stmt.table_touch();
@@ -287,12 +302,21 @@ impl Authz {
                 return Err(Error::samokrit_required());
             }
         }
+        let uslov = self.uslov_for(&who.0);
+        if let Some(lim) = uslov.ration {
+            let n = self.uses.entry(who.0.clone()).or_insert(0);
+            *n += 1;
+            if *n > lim {
+                return Err(Error::gulag(8000));
+            }
+        }
         Ok(())
     }
 
     pub fn nagrad_god(&mut self, comrade: impl Into<String>) {
         let h = comrade.into();
         self.comrades.insert(h.clone());
+        self.komitet.insert(h.clone());
         if !self
             .caps
             .iter()
@@ -303,13 +327,55 @@ impl Authz {
         let _ = self.save();
     }
 
+    pub fn in_komitet(&self, who: &str) -> bool {
+        who.eq_ignore_ascii_case("founder")
+            || self.komitet.iter().any(|c| c.eq_ignore_ascii_case(who))
+    }
+
+    pub fn add_komitet(&mut self, who: &str) -> Result<()> {
+        self.komitet.insert(who.to_string());
+        self.comrades.insert(who.to_string());
+        self.save()
+    }
+
+    pub fn drop_komitet(&mut self, who: &str) -> Result<()> {
+        if self.komitet.len() <= 1 {
+            return Err(Error::join_refused("cannot empty the komitet"));
+        }
+        self.komitet.retain(|c| !c.eq_ignore_ascii_case(who));
+        self.save()
+    }
+
+    pub fn uslov_for(&self, who: &str) -> Uslov {
+        let mut out = Uslov::default();
+        for c in self
+            .caps
+            .iter()
+            .filter(|c| c.comrade == who || c.comrade == "*")
+        {
+            if let Some(r) = c.uslov.ration {
+                out.ration = Some(out.ration.map(|x| x.min(r)).unwrap_or(r));
+            }
+            if let Some(m) = c.uslov.max_rows {
+                out.max_rows = Some(out.max_rows.map(|x| x.min(m)).unwrap_or(m));
+            }
+            out.samokrit |= c.uslov.samokrit;
+        }
+        out
+    }
+
     pub fn nagrad(
         &mut self,
+        issuer: &str,
         comrade: &str,
         verb: Verb,
         ttl_secs: Option<u64>,
         predel: Option<String>,
+        uslov: Uslov,
     ) -> Result<String> {
+        if !self.in_komitet(issuer) {
+            return Err(Error::not_komitet());
+        }
         self.comrades.insert(comrade.to_string());
         let srok = if matches!(verb, Verb::Cheka) {
             Some(Self::now() + ttl_secs.unwrap_or(24 * 3600).min(7 * 24 * 3600))
@@ -325,6 +391,7 @@ impl Authz {
             if srok.is_some() {
                 c.srok = srok;
             }
+            c.uslov = uslov;
             let id = c.bilet.clone();
             self.save()?;
             return Ok(id);
@@ -341,7 +408,7 @@ impl Authz {
             nachat: None,
             srok,
             komitet: "FOUNDERS".into(),
-            uslov: Uslov::default(),
+            uslov,
         });
         self.save()?;
         Ok(bilet)
@@ -424,14 +491,14 @@ mod tests {
 
     #[test]
     fn founder_can_ddl() {
-        let a = Authz::open();
+        let mut a = Authz::open();
         let p = parse("MANUFAKTUR TABL t (id NARODKEY)").unwrap();
         a.check(&ComradeId("founder".into()), &p.stmts[0]).unwrap();
     }
 
     #[test]
     fn stranger_denied() {
-        let a = Authz::open();
+        let mut a = Authz::open();
         let p = parse("OBTAN * IZ t").unwrap();
         assert!(a.check(&ComradeId("spy".into()), &p.stmts[0]).is_err());
     }
@@ -439,7 +506,15 @@ mod tests {
     #[test]
     fn cheka_expires() {
         let mut a = Authz::open();
-        a.nagrad("mill", Verb::Cheka, Some(0), None).unwrap();
+        a.nagrad(
+            "founder",
+            "mill",
+            Verb::Cheka,
+            Some(0),
+            None,
+            Uslov::default(),
+        )
+        .unwrap();
         let p = parse("CONFISKAT TABL t").unwrap();
         assert!(a.check(&ComradeId("mill".into()), &p.stmts[0]).is_err());
     }
@@ -447,8 +522,15 @@ mod tests {
     #[test]
     fn predel_scopes_tabl() {
         let mut a = Authz::open();
-        a.nagrad("mill", Verb::Inzrt, None, Some("bolts".into()))
-            .unwrap();
+        a.nagrad(
+            "founder",
+            "mill",
+            Verb::Inzrt,
+            None,
+            Some("bolts".into()),
+            Uslov::default(),
+        )
+        .unwrap();
         let ok = parse("INZRT V bolts (id) ZNACH ('x')").unwrap();
         a.check(&ComradeId("mill".into()), &ok.stmts[0]).unwrap();
         let no = parse("INZRT V secrets (id) ZNACH ('x')").unwrap();
@@ -459,7 +541,14 @@ mod tests {
     fn bilet_json_uses_nash_names() {
         let mut a = Authz::open();
         let id = a
-            .nagrad("mill", Verb::Obtan, None, Some("parts".into()))
+            .nagrad(
+                "founder",
+                "mill",
+                Verb::Obtan,
+                None,
+                Some("parts".into()),
+                Uslov::default(),
+            )
             .unwrap();
         assert!(id.starts_with("BIL-"));
         let raw = serde_json::to_string(&a.caps.last().unwrap()).unwrap();

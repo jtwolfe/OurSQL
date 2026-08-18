@@ -11,8 +11,8 @@ pub mod lex;
 pub mod parse;
 
 pub use ast::{BinOp, Expr, Join, SelectItem, Stmt, UnaryOp};
-pub use keywords::{nash_for_sql, rewrite_bourgeois, KEYWORDS};
-pub use parse::{parse, Parsed};
+pub use keywords::{KEYWORDS, nash_for_sql, rewrite_bourgeois};
+pub use parse::{Parsed, parse};
 
 pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")

@@ -13,12 +13,18 @@ A **kollektiv** is a named database with:
 
 Joining:
 
-1. Applicant node presents a join petition (signed).
-2. Founding komitet (or current membership voters) NAGRAD a `JOIN` capability.
-3. State transfer: certified WAL prefix + page snapshot.
-4. New view epoch is signed and gossiped.
+1. Applicant presents `PETITION SOYUZ`.
+2. A komitet member runs `NAGRAD SOYUZ NA COMRADE plant`.
+3. The new plant `--peer`s an existing node and NEED/SNAPSHOTs.
+4. View epoch increments (see `POKAZ USTANOV` / `epoch`).
 
-Leaving is a signed `LEAVE`. Pages stay on disk.
+Leaving is `LEAVE COMRADE plant` (or `OTYAT SOYUZ IZ COMRADE plant`).
+Pages stay on that disk. You cannot LEAVE the last plant.
+
+`USTANOV rf = N` (default `0` = everyone) places APPLY on
+`owners(narodkey, N)` plus the writer. Certification quorum is majority
+of that placement set. The 4-plant in-situ test leaves `rf = 0` so
+every plant has every row.
 
 ## What is certified
 
