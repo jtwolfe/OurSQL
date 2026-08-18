@@ -8,14 +8,15 @@ pub mod eval;
 
 use std::path::Path;
 
-use oursql_authz::Authz;
+use oursql_authz::{Authz, Verb};
 use oursql_bureau::Bureau;
-use oursql_consensus::LocalMesh;
+use oursql_consensus::{ApplyMsg, LocalMesh};
 use oursql_core::{
     Column, ComradeId, CommitKind, Dossier, Error, Intensity, Outcome, Result, Value,
 };
+use oursql_crypto::{hex, mutation_digest};
 use oursql_nashcql::{parse, Expr, SelectItem, Stmt};
-use oursql_storage::Sklad;
+use oursql_storage::{Sklad, WalRec};
 
 use crate::eval::{eval, truthy};
 
@@ -27,6 +28,10 @@ pub struct Engine {
     pub comrade: ComradeId,
     pub dossier: Dossier,
     pub node_name: String,
+    pub require_sign: bool,
+    pub last_sig: Option<String>,
+    pub peers: Vec<String>,
+    audit: Vec<String>,
 }
 
 impl Engine {
@@ -40,34 +45,121 @@ impl Engine {
         comrade: impl Into<String>,
     ) -> Result<Self> {
         let comrade = ComradeId(comrade.into());
-        let mut authz = Authz::open();
+        let sklad = Sklad::open(&dir)?;
+        let mut authz = Authz::open_in(sklad.data_dir(), &sklad.identity)?;
         authz.nagrad_god(comrade.0.clone());
         let mesh = LocalMesh::new();
         mesh.join("local");
         Ok(Self {
-            sklad: Sklad::open(dir)?,
+            sklad,
             bureau: Bureau::new(intensity),
             authz,
             mesh,
             comrade,
             dossier: Dossier::new(1),
             node_name: "local".into(),
+            require_sign: true,
+            last_sig: None,
+            peers: Vec::new(),
+            audit: Vec::new(),
         })
     }
 
+    pub fn attach_mesh(&mut self, mesh: LocalMesh, name: impl Into<String>) {
+        self.mesh = mesh;
+        self.node_name = name.into();
+        self.mesh.join(&self.node_name);
+    }
+
     pub fn execute(&mut self, sql: &str) -> Result<Outcome> {
+        self.execute_signed(sql, true)
+    }
+
+    pub fn execute_unsigned(&mut self, sql: &str) -> Result<Outcome> {
+        self.execute_signed(sql, false)
+    }
+
+    fn execute_signed(&mut self, sql: &str, signed: bool) -> Result<Outcome> {
+        self.poll_mesh()?;
         self.bureau.check_ration(&self.comrade)?;
         let parsed = parse(sql)?;
         self.bureau.reject_bourgeois(parsed.bourgeois)?;
         let notice = self.bureau.bourgeois_notice(parsed.bourgeois);
         let mut last = Outcome::empty();
         for stmt in parsed.stmts {
+            if stmt.is_mutation() && !signed && self.require_sign {
+                return Err(Error::mesh(
+                    2109,
+                    "UNSIGNED_MUTATION",
+                    "unsigned mutation refused",
+                ));
+            }
+            if stmt.is_mutation() && signed {
+                let d = mutation_digest(
+                    &self.sklad.kollektiv,
+                    1,
+                    sql,
+                    stmt.table_touch().unwrap_or("-"),
+                    &self.comrade.0,
+                    0,
+                );
+                self.last_sig = Some(self.authz.sign_mutation(&d));
+                let _ = hex(&d);
+            }
             last = self.exec_stmt(stmt)?;
         }
         if let Some(n) = notice {
             last = last.with_notice(n);
         }
         Ok(last)
+    }
+
+    pub fn poll_mesh(&mut self) -> Result<()> {
+        let msgs = self.mesh.drain(&self.node_name);
+        for msg in msgs {
+            let recs: Vec<WalRec> = serde_json::from_str(&msg.recs_json)
+                .map_err(|e| Error::recovery_failed(e.to_string()))?;
+            self.sklad.apply_remote(&recs)?;
+            self.audit("APPLY", &msg.from);
+        }
+        Ok(())
+    }
+
+    fn publish_commit(&mut self) {
+        let recs = &self.sklad.last_commit_recs;
+        if recs.is_empty() {
+            return;
+        }
+        let recs_json = serde_json::to_string(recs).unwrap_or_else(|_| "[]".into());
+        let d = mutation_digest(
+            &self.sklad.kollektiv,
+            1,
+            &recs_json,
+            "-",
+            &self.comrade.0,
+            self.sklad.last_seq,
+        );
+        let msg = ApplyMsg {
+            from: self.node_name.clone(),
+            seq: self.sklad.last_seq,
+            recs_json,
+            digest: hex(&d),
+        };
+        self.mesh.publish(&self.node_name, msg.clone());
+        for p in &self.peers {
+            let _ = oursql_consensus::push_peer(p, &msg);
+        }
+    }
+
+    fn audit(&mut self, verb: &str, note: &str) {
+        let line = format!(
+            "{} {} {} {} {}",
+            self.dossier, self.comrade, verb, self.bureau.intensity, note
+        );
+        self.audit.push(line);
+        if self.audit.len() > 2000 {
+            self.audit.drain(0..500);
+        }
     }
 
     fn exec_stmt(&mut self, stmt: Stmt) -> Result<Outcome> {
@@ -105,7 +197,13 @@ impl Engine {
                     .filter(|c| c.name != "_solidarity")
                     .collect();
                 self.sklad.create_table(&name, cols)?;
+                self.audit("MANUFAKTUR", &name);
                 Ok(Outcome::Count { n: 0, notice: None })
+            }
+            Stmt::ManufakturSpravka { name, table, col } => {
+                self.sklad.create_index(&table, &name, &col)?;
+                self.audit("SPRAVKA", &name);
+                Ok(Outcome::empty())
             }
             Stmt::UnmakTabl { name } => {
                 self.sklad.drop_table(&name)?;
@@ -185,6 +283,7 @@ impl Engine {
                 distinct,
                 proj,
                 from,
+                join,
                 given,
                 lineup,
                 ration,
@@ -194,13 +293,36 @@ impl Engine {
                     distinct,
                     proj: proj.clone(),
                     from: from.clone(),
+                    join: join.clone(),
                     given: given.clone(),
                     lineup: lineup.clone(),
                     ration,
                     ochered,
                 });
-                let schema = self.sklad.columns(&from)?;
+                let mut schema = self.sklad.columns(&from)?;
                 let mut rows = self.sklad.scan(&from)?;
+                if let Some(j) = &join {
+                    let rschema = self.sklad.columns(&j.table)?;
+                    let rrows = self.sklad.scan(&j.table)?;
+                    let mut combined = Vec::new();
+                    let mut cschema = schema.clone();
+                    cschema.extend(rschema.iter().cloned());
+                    for l in &rows {
+                        for r in &rrows {
+                            let mut vals = l.values.clone();
+                            vals.extend(r.values.iter().cloned());
+                            if truthy(&eval(&j.on, &cschema, &vals).unwrap_or(Value::Daily(false)))
+                            {
+                                combined.push(oursql_core::Row {
+                                    key: l.key.clone(),
+                                    values: vals,
+                                });
+                            }
+                        }
+                    }
+                    schema = cschema;
+                    rows = combined;
+                }
                 if let Some(g) = &given {
                     rows.retain(|r| {
                         eval(g, &schema, &r.values)
@@ -339,6 +461,7 @@ impl Engine {
                 let tx = self.sklad.commit(kind)?;
                 if matches!(kind, CommitKind::Soyuz | CommitKind::Cheka) {
                     let _ = self.mesh.certify(&self.node_name, &format!("tx-{tx}"), kind);
+                    self.publish_commit();
                 }
                 Ok(Outcome::Count {
                     n: tx,
@@ -422,6 +545,43 @@ impl Engine {
                     self.bureau.intensity =
                         Intensity::new(n).map_err(|_| Error::intensity_denied())?;
                 }
+                Ok(Outcome::empty())
+            }
+            Stmt::PokazAudit => Ok(Outcome::Rows {
+                columns: vec!["entry".into()],
+                rows: self
+                    .audit
+                    .iter()
+                    .map(|e| vec![Value::Tekst(e.clone())])
+                    .collect(),
+                partial: false,
+                notice: None,
+            }),
+            Stmt::PokazComrade => Ok(Outcome::Rows {
+                columns: vec!["comrade".into()],
+                rows: self
+                    .authz
+                    .list_comrades()
+                    .into_iter()
+                    .map(|c| vec![Value::Tekst(c)])
+                    .collect(),
+                partial: false,
+                notice: None,
+            }),
+            Stmt::Hello { comrade } => {
+                self.comrade = self.authz.hello(&comrade)?;
+                Ok(Outcome::empty().with_notice(format!("HELLO {}", self.comrade)))
+            }
+            Stmt::Nagrad { verb, comrade, ttl } => {
+                let v = Verb::parse(&verb)?;
+                self.authz.nagrad(&comrade, v, ttl)?;
+                self.audit("NAGRAD", &comrade);
+                Ok(Outcome::empty().with_notice(format!("NAGRAD {verb} {comrade}")))
+            }
+            Stmt::Otyat { verb, comrade } => {
+                let v = Verb::parse(&verb)?;
+                self.authz.otyat(&comrade, v)?;
+                self.audit("OTYAT", &comrade);
                 Ok(Outcome::empty())
             }
         }
@@ -680,6 +840,66 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn unsigned_mutation_refused() {
+        let dir = tmp();
+        let mut e = Engine::open_with(&dir, Intensity::zero(), "founder").unwrap();
+        let err = e
+            .execute_unsigned("MANUFAKTUR TABL t (id NARODKEY)")
+            .unwrap_err();
+        assert_eq!(err.name, "UNSIGNED_MUTATION");
+        e.execute("MANUFAKTUR TABL t (id NARODKEY)").unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn nagrad_hello_pokaz() {
+        let dir = tmp();
+        let mut e = Engine::open_with(&dir, Intensity::zero(), "founder").unwrap();
+        e.execute("NAGRAD OBTAN NA COMRADE mill").unwrap();
+        e.execute("HELLO COMRADE mill").unwrap();
+        let out = e.execute("POKAZ COMRADE").unwrap();
+        assert!(out.row_count() >= 2);
+        e.execute("POKAZ AUDIT").unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn mesh_write_a_read_b() {
+        let dir_a = tmp();
+        let dir_b = tmp();
+        let hub = LocalMesh::new();
+        let mut a = Engine::open_with(&dir_a, Intensity::zero(), "founder").unwrap();
+        let mut b = Engine::open_with(&dir_b, Intensity::zero(), "founder").unwrap();
+        a.attach_mesh(hub.clone(), "a");
+        b.attach_mesh(hub, "b");
+        a.execute("NACHAT").unwrap();
+        a.execute("MANUFAKTUR TABL t (id NARODKEY, n CELIY)").unwrap();
+        a.execute("INZRT V t (id, n) ZNACH ('k', 9)").unwrap();
+        a.execute("ZAVERSHIT SOYUZ").unwrap();
+        b.poll_mesh().unwrap();
+        let out = b.execute("OBTAN n IZ t").unwrap();
+        assert_eq!(out.row_count(), 1);
+        std::fs::remove_dir_all(&dir_a).ok();
+        std::fs::remove_dir_all(&dir_b).ok();
+    }
+
+    #[test]
+    fn spravka_and_join() {
+        let dir = tmp();
+        let mut e = Engine::open_with(&dir, Intensity::zero(), "founder").unwrap();
+        e.execute("MANUFAKTUR TABL plants (id NARODKEY, name TEKST)").unwrap();
+        e.execute("MANUFAKTUR TABL bolts (id NARODKEY, plant TEKST, qty CELIY)").unwrap();
+        e.execute("MANUFAKTUR SPRAVKA ix_plant NA bolts (plant)").unwrap();
+        e.execute("INZRT V plants (id, name) ZNACH ('p1', 'brisbane')").unwrap();
+        e.execute("INZRT V bolts (id, plant, qty) ZNACH ('b1', 'p1', 4)").unwrap();
+        let out = e
+            .execute("OBTAN name, qty IZ plants VNUTRSOYUZ bolts NA id = plant")
+            .unwrap();
+        assert_eq!(out.row_count(), 1);
         std::fs::remove_dir_all(&dir).ok();
     }
 }

@@ -1,10 +1,11 @@
 //! Brigade SKLAD.
 //!
-//! Pages of truth. WAL. Crash recovery.
+//! Pages of truth. WAL. Encrypted checkpoint. Crash recovery.
 //! Does not parse NashCQL. Does not know gulag.
 
 #![deny(unsafe_code)]
 
+pub mod page;
 pub mod sklad;
 pub mod wal;
 

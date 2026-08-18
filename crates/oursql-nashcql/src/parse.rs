@@ -121,6 +121,9 @@ impl Parser {
                 "DOKLAD" => self.doklad(),
                 "RAZBOR" => self.razbor(),
                 "USTANOV" => self.ustanov(),
+                "NAGRAD" => self.nagrad(),
+                "OTYAT" => self.otyat(),
+                "HELLO" => self.hello(),
                 other => Err(Error::bad_keyword(format!("cannot start a statement: {other}"))),
             },
             other => Err(Error::bad_grammar(format!("expected statement, got {other:?}"))),
@@ -134,6 +137,16 @@ impl Parser {
 
     fn manufaktur(&mut self) -> Result<Stmt> {
         self.eat_kw("MANUFAKTUR")?;
+        if self.try_kw("SPRAVKA") {
+            let name = self.eat_ident()?;
+            let _ = self.try_kw("NA");
+            let _ = self.try_kw("ON");
+            let table = self.eat_ident()?;
+            self.expect_lparen()?;
+            let col = self.eat_ident()?;
+            self.expect_rparen()?;
+            return Ok(Stmt::ManufakturSpravka { name, table, col });
+        }
         self.eat_kw("TABL")?;
         let name = self.eat_ident()?;
         self.expect_lparen()?;
@@ -320,6 +333,17 @@ impl Parser {
         }
         self.eat_kw("IZ")?;
         let from = self.eat_ident()?;
+        let join = if self.try_kw("VNUTRSOYUZ") || self.try_kw("SOYUZ") {
+            let table = self.eat_ident()?;
+            let _ = self.try_kw("NA");
+            let _ = self.try_kw("ON");
+            Some(crate::ast::Join {
+                table,
+                on: self.expr()?,
+            })
+        } else {
+            None
+        };
         let given = if self.try_kw("GIVEN") {
             Some(self.expr()?)
         } else {
@@ -359,6 +383,7 @@ impl Parser {
             distinct,
             proj,
             from,
+            join,
             given,
             lineup,
             ration,
@@ -427,6 +452,12 @@ impl Parser {
         if self.try_kw("USTANOV") {
             return Ok(Stmt::PokazUstanov);
         }
+        if self.try_kw("AUDIT") {
+            return Ok(Stmt::PokazAudit);
+        }
+        if self.try_kw("COMRADE") {
+            return Ok(Stmt::PokazComrade);
+        }
         Ok(Stmt::PokazTabl)
     }
 
@@ -454,6 +485,45 @@ impl Parser {
             other => return Err(Error::bad_grammar(format!("bad ustanov {other:?}"))),
         };
         Ok(Stmt::Ustanov { key, value })
+    }
+
+    fn hello(&mut self) -> Result<Stmt> {
+        self.eat_kw("HELLO")?;
+        let _ = self.try_kw("COMRADE");
+        Ok(Stmt::Hello {
+            comrade: self.eat_ident()?,
+        })
+    }
+
+    fn nagrad(&mut self) -> Result<Stmt> {
+        self.eat_kw("NAGRAD")?;
+        let verb = match self.bump()? {
+            Tok::Kw(s) | Tok::Ident(s) => s,
+            other => return Err(Error::bad_grammar(format!("expected verb, {other:?}"))),
+        };
+        let _ = self.try_kw("NA");
+        let _ = self.try_kw("COMRADE");
+        let comrade = self.eat_ident()?;
+        let ttl = if matches!(self.peek(), Some(Tok::Int(_))) {
+            Some(self.eat_int()? as u64)
+        } else {
+            None
+        };
+        Ok(Stmt::Nagrad { verb, comrade, ttl })
+    }
+
+    fn otyat(&mut self) -> Result<Stmt> {
+        self.eat_kw("OTYAT")?;
+        let verb = match self.bump()? {
+            Tok::Kw(s) | Tok::Ident(s) => s,
+            other => return Err(Error::bad_grammar(format!("expected verb, {other:?}"))),
+        };
+        let _ = self.try_kw("IZ");
+        let _ = self.try_kw("COMRADE");
+        Ok(Stmt::Otyat {
+            verb,
+            comrade: self.eat_ident()?,
+        })
     }
 
     fn samokrit_opt(&mut self) -> Result<Option<String>> {
@@ -688,5 +758,19 @@ mod tests {
     fn parse_perestroj() {
         let p = parse("PERESTROJ TABL bolts ADD COLUMN note TEKST").unwrap();
         assert!(matches!(p.stmts[0], Stmt::PerestrojAdd { .. }));
+    }
+
+    #[test]
+    fn parse_nagrad() {
+        let p = parse("NAGRAD OBTAN NA COMRADE mill").unwrap();
+        assert!(matches!(p.stmts[0], Stmt::Nagrad { .. }));
+    }
+
+    #[test]
+    fn fuzz_parser_does_not_panic() {
+        for i in 0u32..200 {
+            let s: String = (0..32).map(|j| char::from(((i * 17 + j * 13) % 95) as u8 + 32)).collect();
+            let _ = parse(&s);
+        }
     }
 }

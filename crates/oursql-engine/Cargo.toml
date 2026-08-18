@@ -17,3 +17,6 @@ oursql-core.workspace = true
 oursql-nashcql.workspace = true
 oursql-storage.workspace = true
 oursql-wire.workspace = true
+serde_json.workspace = true
+oursql-crypto.workspace = true
+

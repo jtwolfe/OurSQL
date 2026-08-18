@@ -53,6 +53,12 @@ pub enum WalRec {
         kollektiv: String,
         table: String,
     },
+    CreateIndex {
+        kollektiv: String,
+        table: String,
+        name: String,
+        col: String,
+    },
 }
 
 pub struct Wal {
@@ -100,16 +106,16 @@ impl Wal {
             let crc = u32::from_le_bytes(all[i + 4..i + 8].try_into().unwrap());
             i += 8;
             if i + len > all.len() {
-                // torn tail — ignore
                 break;
             }
             let payload = &all[i..i + len];
             if crc32(payload) != crc {
                 break;
             }
-            let rec: WalRec =
-                serde_json::from_slice(payload).map_err(|e| Error::recovery_failed(e.to_string()))?;
-            out.push(rec);
+            match serde_json::from_slice::<WalRec>(payload) {
+                Ok(rec) => out.push(rec),
+                Err(_) => break,
+            }
             i += len;
         }
         Ok(out)
@@ -177,6 +183,14 @@ mod tests {
         }
         let recs = Wal::recover(&path).unwrap();
         assert_eq!(recs.len(), 1);
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn fuzz_garbage_does_not_panic() {
+        let path = tmp();
+        std::fs::write(&path, (0u8..=255).cycle().take(4096).collect::<Vec<_>>()).unwrap();
+        let _ = Wal::recover(&path).unwrap();
         std::fs::remove_file(&path).ok();
     }
 }

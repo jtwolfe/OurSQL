@@ -12,6 +12,11 @@ pub enum Stmt {
     UnmakTabl {
         name: String,
     },
+    ManufakturSpravka {
+        name: String,
+        table: String,
+        col: String,
+    },
     Ochistka {
         name: String,
     },
@@ -40,6 +45,7 @@ pub enum Stmt {
         distinct: bool,
         proj: Vec<SelectItem>,
         from: String,
+        join: Option<Join>,
         given: Option<Expr>,
         lineup: Vec<(String, bool)>,
         ration: Option<i64>,
@@ -61,6 +67,8 @@ pub enum Stmt {
     },
     PokazTabl,
     PokazUstanov,
+    PokazAudit,
+    PokazComrade,
     Doklad {
         table: String,
     },
@@ -69,15 +77,30 @@ pub enum Stmt {
         key: String,
         value: String,
     },
+    Hello {
+        comrade: String,
+    },
+    Nagrad {
+        verb: String,
+        comrade: String,
+        ttl: Option<u64>,
+    },
+    Otyat {
+        verb: String,
+        comrade: String,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Join {
+    pub table: String,
+    pub on: Expr,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum SelectItem {
     Star,
-    Expr {
-        expr: Expr,
-        alias: Option<String>,
-    },
+    Expr { expr: Expr, alias: Option<String> },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -133,6 +156,7 @@ impl Stmt {
             | Stmt::Opdat { table: name, .. }
             | Stmt::Remov { table: name, .. }
             | Stmt::Obtan { from: name, .. }
+            | Stmt::ManufakturSpravka { table: name, .. }
             | Stmt::Confiskat { table: name, .. }
             | Stmt::Osvobod { table: name }
             | Stmt::Doklad { table: name } => Some(name),
@@ -150,6 +174,9 @@ impl Stmt {
                 | Stmt::Inzrt { .. }
                 | Stmt::Opdat { .. }
                 | Stmt::Remov { .. }
+                | Stmt::ManufakturSpravka { .. }
+                | Stmt::Nagrad { .. }
+                | Stmt::Otyat { .. }
         )
     }
 
@@ -160,6 +187,7 @@ impl Stmt {
                 | Stmt::UnmakTabl { .. }
                 | Stmt::PerestrojAdd { .. }
                 | Stmt::Ochistka { .. }
+                | Stmt::ManufakturSpravka { .. }
         )
     }
 

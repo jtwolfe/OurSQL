@@ -26,9 +26,9 @@ of collective friction. Intensity is a single integer `0..=100`.
 | Oppressive | Forms, dossiers, rations, accusations, confiscation, gulag rate-limits |
 | Functional | ACID-ish commits, indexes, a real planner, crash recovery — at intensity 25 |
 
-**Phase 1 is implemented.** Twelve brigades, two binaries (`oursql`, `oursqld`),
-WAL crash recovery, NashCQL plus decadent SQL rewrite, bureaucracy at intensity
-0/25, CHEKA holds, accusations, gulag ration, in-process mesh certify.
+**Phases 1–6 are implemented.** Encrypted 16KiB pages, signed mutations, HELLO/NAGRAD/OTYAT,
+two-node mesh (`ZAVERSHIT SOYUZ`), RF=2 placement, CHEKA expiry, OCHERED/1 driver,
+HTTP admin, fuzz tests. Bureaucracy still defaults to **25**.
 
 ```
 cargo test --workspace

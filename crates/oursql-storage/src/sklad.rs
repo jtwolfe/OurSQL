@@ -1,19 +1,22 @@
-//! SKLAD — in-memory tabls with durable WAL. Boring on purpose.
+//! SKLAD — in-memory tabls with durable WAL + encrypted 16KiB checkpoint.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use oursql_core::{
-    Column, CommitKind, Error, Kollektiv, NarodKey, Result, Row, Value,
-};
+use oursql_core::{Column, CommitKind, Error, Kollektiv, NarodKey, Result, Row, Value};
+use oursql_crypto::NodeIdentity;
+use serde::{Deserialize, Serialize};
 
+use crate::page::{pack, read_checkpoint, unpack, write_checkpoint, PageType, PAGE_SIZE};
 use crate::wal::{Wal, WalRec};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Table {
     pub name: String,
     pub cols: Vec<Column>,
     pub rows: BTreeMap<NarodKey, Vec<Value>>,
+    #[serde(default)]
+    pub indexes: Vec<(String, String)>,
 }
 
 impl Table {
@@ -39,6 +42,16 @@ struct Scratch {
     inserts: Vec<(String, String, NarodKey, Vec<Value>)>,
     updates: Vec<(String, String, NarodKey, Vec<Value>)>,
     deletes: Vec<(String, String, NarodKey)>,
+    indexes: Vec<(String, String, String, String)>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct Snap {
+    tables: Vec<((String, String), Table)>,
+    holds: Vec<(String, String)>,
+    next_tx: u64,
+    next_narod: u64,
+    last_seq: u64,
 }
 
 pub struct Sklad {
@@ -51,18 +64,19 @@ pub struct Sklad {
     next_narod: u64,
     in_tx: bool,
     scratch: Scratch,
+    pub identity: NodeIdentity,
+    pub last_commit_recs: Vec<WalRec>,
+    pub last_seq: u64,
 }
 
 impl Sklad {
     pub fn open(dir: impl AsRef<Path>) -> Result<Self> {
         let dir = dir.as_ref().to_path_buf();
         std::fs::create_dir_all(&dir)?;
-        let wal_path = dir.join("wal.log");
-        let recs = Wal::recover(&wal_path)?;
-        let wal = Wal::open(&wal_path)?;
+        let identity = NodeIdentity::load_or_create(dir.join("node.key"))?;
         let mut s = Self {
+            wal: Wal::open(dir.join("wal.log"))?,
             dir,
-            wal,
             kollektiv: Kollektiv::default().0,
             tables: BTreeMap::new(),
             holds: BTreeSet::new(),
@@ -70,13 +84,64 @@ impl Sklad {
             next_narod: 1,
             in_tx: false,
             scratch: Scratch::default(),
+            identity,
+            last_commit_recs: Vec::new(),
+            last_seq: 0,
         };
+        s.load_checkpoint()?;
+        let recs = Wal::recover(s.dir.join("wal.log"))?;
         s.replay(&recs)?;
         Ok(s)
     }
 
     pub fn data_dir(&self) -> &Path {
         &self.dir
+    }
+
+    fn checkpoint_path(&self) -> PathBuf {
+        self.dir.join("kollektiv").join("pages").join("checkpoint.pg")
+    }
+
+    fn load_checkpoint(&mut self) -> Result<()> {
+        let pages = read_checkpoint(self.checkpoint_path(), &self.identity.storage_key)?;
+        if pages.is_empty() {
+            return Ok(());
+        }
+        let mut blob = Vec::new();
+        for p in &pages {
+            let (_, _, pay) = unpack(p)?;
+            blob.extend_from_slice(pay);
+        }
+        let snap: Snap =
+            serde_json::from_slice(&blob).map_err(|e| Error::recovery_failed(e.to_string()))?;
+        self.tables = snap.tables.into_iter().collect();
+        self.holds = snap.holds.into_iter().collect();
+        self.next_tx = snap.next_tx;
+        self.next_narod = snap.next_narod;
+        self.last_seq = snap.last_seq;
+        Ok(())
+    }
+
+    pub fn checkpoint(&mut self) -> Result<()> {
+        let snap = Snap {
+            tables: self.tables.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+            holds: self.holds.iter().cloned().collect(),
+            next_tx: self.next_tx,
+            next_narod: self.next_narod,
+            last_seq: self.last_seq,
+        };
+        let json = serde_json::to_vec(&snap).map_err(|e| Error::wal_io(e.to_string()))?;
+        let chunk = PAGE_SIZE - 48;
+        let mut pages = Vec::new();
+        if json.is_empty() {
+            pages.push(pack(PageType::Meta, 0, &[])?);
+        } else {
+            for (i, part) in json.chunks(chunk).enumerate() {
+                let ty = if i == 0 { PageType::Meta } else { PageType::Overflow };
+                pages.push(pack(ty, i as u32, part)?);
+            }
+        }
+        write_checkpoint(self.checkpoint_path(), &self.identity.storage_key, &pages)
     }
 
     fn replay(&mut self, recs: &[WalRec]) -> Result<()> {
@@ -107,7 +172,6 @@ impl Sklad {
                     if open.is_some() {
                         buf.push(other);
                     } else {
-                        // auto-commit records (legacy / single-op)
                         self.apply_committed(other)?;
                     }
                 }
@@ -116,7 +180,7 @@ impl Sklad {
         Ok(())
     }
 
-    fn apply_committed(&mut self, rec: &WalRec) -> Result<()> {
+    pub fn apply_committed(&mut self, rec: &WalRec) -> Result<()> {
         match rec {
             WalRec::CreateTable {
                 kollektiv,
@@ -129,6 +193,7 @@ impl Sklad {
                         name: name.clone(),
                         cols: cols.clone(),
                         rows: BTreeMap::new(),
+                        indexes: Vec::new(),
                     },
                 );
             }
@@ -172,9 +237,68 @@ impl Sklad {
             WalRec::Osvobod { kollektiv, table } => {
                 self.holds.remove(&(kollektiv.clone(), table.clone()));
             }
+            WalRec::CreateIndex {
+                kollektiv,
+                table,
+                name,
+                col,
+            } => {
+                if let Some(t) = self.tables.get_mut(&(kollektiv.clone(), table.clone())) {
+                    if !t.indexes.iter().any(|(n, _)| n == name) {
+                        t.indexes.push((name.clone(), col.clone()));
+                    }
+                }
+            }
             WalRec::Begin { .. } | WalRec::Commit { .. } | WalRec::Abort { .. } => {}
         }
         Ok(())
+    }
+
+    /// Apply a remote certified batch. Idempotent.
+    pub fn apply_remote(&mut self, recs: &[WalRec]) -> Result<()> {
+        for r in recs {
+            if matches!(r, WalRec::Begin { .. } | WalRec::Commit { .. } | WalRec::Abort { .. }) {
+                continue;
+            }
+            self.apply_committed(r)?;
+            self.last_seq += 1;
+        }
+        self.checkpoint()?;
+        Ok(())
+    }
+
+    pub fn export_snapshot(&self) -> Vec<WalRec> {
+        let mut out = Vec::new();
+        for ((k, n), t) in &self.tables {
+            out.push(WalRec::CreateTable {
+                kollektiv: k.clone(),
+                name: n.clone(),
+                cols: t.cols.clone(),
+            });
+            for (idx, col) in &t.indexes {
+                out.push(WalRec::CreateIndex {
+                    kollektiv: k.clone(),
+                    table: n.clone(),
+                    name: idx.clone(),
+                    col: col.clone(),
+                });
+            }
+            for (key, values) in &t.rows {
+                out.push(WalRec::Insert {
+                    kollektiv: k.clone(),
+                    table: n.clone(),
+                    key: key.clone(),
+                    values: values.clone(),
+                });
+            }
+        }
+        for (k, n) in &self.holds {
+            out.push(WalRec::Confiskat {
+                kollektiv: k.clone(),
+                table: n.clone(),
+            });
+        }
+        out
     }
 
     fn bump_narod(&mut self, key: &NarodKey) {
@@ -197,77 +321,68 @@ impl Sklad {
     pub fn commit(&mut self, _kind: CommitKind) -> Result<u64> {
         let tx = self.next_tx;
         self.next_tx += 1;
-        self.wal.append(&WalRec::Begin { tx })?;
+        let mut recs = vec![WalRec::Begin { tx }];
         let scratch = std::mem::take(&mut self.scratch);
         for (k, n, cols) in &scratch.tables_created {
-            self.wal.append(&WalRec::CreateTable {
+            recs.push(WalRec::CreateTable {
                 kollektiv: k.clone(),
                 name: n.clone(),
                 cols: cols.clone(),
-            })?;
+            });
         }
         for (k, n) in &scratch.tables_dropped {
-            self.wal.append(&WalRec::DropTable {
+            recs.push(WalRec::DropTable {
                 kollektiv: k.clone(),
                 name: n.clone(),
-            })?;
+            });
+        }
+        for (k, t, name, col) in &scratch.indexes {
+            recs.push(WalRec::CreateIndex {
+                kollektiv: k.clone(),
+                table: t.clone(),
+                name: name.clone(),
+                col: col.clone(),
+            });
         }
         for (k, t, key, values) in &scratch.inserts {
-            self.wal.append(&WalRec::Insert {
+            recs.push(WalRec::Insert {
                 kollektiv: k.clone(),
                 table: t.clone(),
                 key: key.clone(),
                 values: values.clone(),
-            })?;
+            });
         }
         for (k, t, key, values) in &scratch.updates {
-            self.wal.append(&WalRec::Update {
+            recs.push(WalRec::Update {
                 kollektiv: k.clone(),
                 table: t.clone(),
                 key: key.clone(),
                 values: values.clone(),
-            })?;
+            });
         }
         for (k, t, key) in &scratch.deletes {
-            self.wal.append(&WalRec::Delete {
+            recs.push(WalRec::Delete {
                 kollektiv: k.clone(),
                 table: t.clone(),
                 key: key.clone(),
-            })?;
+            });
         }
-        self.wal.append(&WalRec::Commit { tx })?;
-
-        // apply
-        for (k, n, cols) in scratch.tables_created {
-            self.tables.insert(
-                (k, n.clone()),
-                Table {
-                    name: n,
-                    cols,
-                    rows: BTreeMap::new(),
-                },
-            );
+        recs.push(WalRec::Commit { tx });
+        for r in &recs {
+            self.wal.append(r)?;
         }
-        for (k, n) in scratch.tables_dropped {
-            self.tables.remove(&(k.clone(), n.clone()));
+        for r in recs.iter().filter(|r| {
+            !matches!(r, WalRec::Begin { .. } | WalRec::Commit { .. } | WalRec::Abort { .. })
+        }) {
+            self.apply_committed(r)?;
         }
-        for (k, t, key, values) in scratch.inserts {
-            if let Some(tab) = self.tables.get_mut(&(k, t)) {
-                tab.rows.insert(key, values);
-            }
-        }
-        for (k, t, key, values) in scratch.updates {
-            if let Some(tab) = self.tables.get_mut(&(k, t)) {
-                tab.rows.insert(key, values);
-            }
-        }
-        for (k, t, key) in scratch.deletes {
-            if let Some(tab) = self.tables.get_mut(&(k, t)) {
-                tab.rows.remove(&key);
-            }
-        }
+        self.last_commit_recs = recs;
+        self.last_seq += 1;
         self.in_tx = false;
         self.scratch = Scratch::default();
+        if self.last_seq % 8 == 0 {
+            self.checkpoint()?;
+        }
         Ok(tx)
     }
 
@@ -308,6 +423,46 @@ impl Sklad {
         Ok(())
     }
 
+    pub fn create_index(&mut self, table: &str, name: &str, col: &str) -> Result<()> {
+        let cols = self.columns(table)?;
+        if !cols.iter().any(|c| c.name.eq_ignore_ascii_case(col)) {
+            return Err(Error::unknown_ident(format!("column {col}")));
+        }
+        if self.in_tx {
+            self.scratch.indexes.push((
+                self.kollektiv.clone(),
+                table.to_string(),
+                name.to_string(),
+                col.to_string(),
+            ));
+        } else {
+            self.begin()?;
+            self.scratch.indexes.push((
+                self.kollektiv.clone(),
+                table.to_string(),
+                name.to_string(),
+                col.to_string(),
+            ));
+            self.commit(CommitKind::Local)?;
+        }
+        Ok(())
+    }
+
+    pub fn lookup_index(&self, table: &str, col: &str, value: &Value) -> Result<Option<Vec<NarodKey>>> {
+        let t = self.table(table)?;
+        if !t.indexes.iter().any(|(_, c)| c.eq_ignore_ascii_case(col)) {
+            return Ok(None);
+        }
+        let i = t.col_index(col)?;
+        let mut keys = Vec::new();
+        for (k, vals) in &t.rows {
+            if vals.get(i) == Some(value) {
+                keys.push(k.clone());
+            }
+        }
+        Ok(Some(keys))
+    }
+
     pub fn drop_table(&mut self, name: &str) -> Result<()> {
         self.table(name)?;
         if self.in_tx {
@@ -333,21 +488,8 @@ impl Sklad {
         {
             return Err(Error::unknown_ident(format!("tabl {name}")));
         }
-        if let Some((_, _, cols)) = self
-            .scratch
-            .tables_created
-            .iter()
-            .find(|(k, n, _)| k == &self.kollektiv && n == name)
-        {
-            // ephemeral view
-            let _ = cols;
-        }
         self.tables
             .get(&(self.kollektiv.clone(), name.to_string()))
-            .or_else(|| {
-                // created in this tx but not applied — synthesize
-                None
-            })
             .ok_or_else(|| Error::unknown_ident(format!("tabl {name}")))
     }
 
@@ -391,7 +533,6 @@ impl Sklad {
     }
 
     pub fn insert_row(&mut self, table: &str, values: Vec<Value>) -> Result<NarodKey> {
-        // Resolve schema: committed or in-scratch create
         let cols = if let Ok(t) = self.table(table) {
             t.cols.clone()
         } else if let Some((_, _, cols)) = self
@@ -457,7 +598,6 @@ impl Sklad {
                 values: v.clone(),
             })
             .collect();
-        // overlay tx inserts/updates/deletes
         for (k, tname, key, values) in &self.scratch.inserts {
             if k == &self.kollektiv && tname == table {
                 rows.retain(|r| &r.key != key);
@@ -556,13 +696,6 @@ impl Sklad {
         for row in t.rows.values_mut() {
             row.push(Value::Pusto);
         }
-        // rewrite as drop+create is too violent; persist via a comment rec —
-        // we snapshot by rewriting CreateTable on next checkpoint. For now
-        // persist a synthetic create of current schema + all rows on commit.
-        // Simpler: dump a CreateTable of new schema is wrong on replay.
-        // Persist by writing an Update of every row after mutating memory,
-        // plus we need schema in WAL. Encode schema change as CreateTable
-        // replacement: Drop + Create + Insert all. Heavy but correct.
         let t = self.table(table)?.clone();
         let k = self.kollektiv.clone();
         let standalone = !self.in_tx;
@@ -628,6 +761,7 @@ mod tests {
                 vec![Value::Tekst("NAR-001".into()), Value::Celiy(7)],
             )
             .unwrap();
+            s.checkpoint().unwrap();
         }
         let s = Sklad::open(&dir).unwrap();
         let rows = s.scan("bolts").unwrap();
@@ -646,6 +780,48 @@ mod tests {
         s.insert_row("t", vec![Value::Tekst("x".into())]).unwrap();
         s.rollback();
         assert!(s.scan("t").unwrap().is_empty());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn checkpoint_is_encrypted() {
+        let dir = tmpdir();
+        let mut s = Sklad::open(&dir).unwrap();
+        s.create_table(
+            "t",
+            vec![
+                Column::new("id", ColumnType::Narodkey),
+                Column::new("secret", ColumnType::Tekst),
+            ],
+        )
+        .unwrap();
+        s.insert_row(
+            "t",
+            vec![
+                Value::Tekst("k".into()),
+                Value::Tekst("brisbane-se-secret".into()),
+            ],
+        )
+        .unwrap();
+        s.checkpoint().unwrap();
+        let raw = std::fs::read(s.checkpoint_path()).unwrap();
+        assert!(!raw.windows(10).any(|w| w == b"brisbane-s"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn node_key_is_0600() {
+        let dir = tmpdir();
+        let _ = Sklad::open(&dir).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(dir.join("node.key"))
+                .unwrap()
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
         std::fs::remove_dir_all(&dir).ok();
     }
 }

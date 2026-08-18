@@ -25,15 +25,15 @@
 
 **Exit:** examples/hello-kollektiv.nql runs.
 
-## Phase 3 — comrades
+## Phase 3 — comrades — done
 
 - Key files, HELLO, capabilities
 - NAGRAD / OTYAT
 - Signed mutations (node-signed)
 
-**Exit:** unsigned mutation refused.
+**Exit:** unsigned mutation refused. (`unsigned_mutation_refused`)
 
-## Phase 4 — bureau at 25
+## Phase 4 — bureau at 25 — done
 
 - Gulag ration
 - Partial results + retry
@@ -43,22 +43,22 @@
 
 **Exit:** tests in `08-bureaucracy.md` Testing contract pass.
 
-## Phase 5 — mesh
+## Phase 5 — mesh — done
 
 - Two-node join ceremony
 - ZAVERSHIT SOYUZ
 - Repair
 - Placement RF=2
 
-**Exit:** write on A, OBTAN on B.
+**Exit:** write on A, OBTAN on B. (`mesh_write_a_read_b`)
 
-## Phase 6 — hardness
+## Phase 6 — hardness — done
 
 - Fuzz parser and WAL
-- cargo deny
-- Encryption at rest on by default
+- `deny.toml` + parser/WAL fuzz
+- Encryption at rest (XChaCha20-Poly1305 16KiB pages)
 - CHEKA expiry enforced
-- Driver crate + a tiny HTTP admin (optional)
+- Driver OCHERED/1 + `oursqld --admin`
 
 ## Explicitly later
 

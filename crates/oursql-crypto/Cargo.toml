@@ -3,7 +3,7 @@ name = "oursql-crypto"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Brigade CRYPTO — digests and comrade signatures"
+description = "Brigade CRYPTO — digests, signatures, page seal"
 repository.workspace = true
 
 [lints]
@@ -14,3 +14,5 @@ oursql-core.workspace = true
 blake3.workspace = true
 ed25519-dalek.workspace = true
 rand.workspace = true
+chacha20poly1305.workspace = true
+serde.workspace = true

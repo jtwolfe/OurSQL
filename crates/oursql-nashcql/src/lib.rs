@@ -10,7 +10,7 @@ pub mod keywords;
 pub mod lex;
 pub mod parse;
 
-pub use ast::{BinOp, Expr, SelectItem, Stmt, UnaryOp};
+pub use ast::{BinOp, Expr, Join, SelectItem, Stmt, UnaryOp};
 pub use keywords::{nash_for_sql, rewrite_bourgeois, KEYWORDS};
 pub use parse::{parse, Parsed};
 

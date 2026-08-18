@@ -18,3 +18,7 @@ oursql-core.workspace = true
 oursql-engine.workspace = true
 oursql-wire.workspace = true
 oursql-crypto.workspace = true
+oursql-consensus.workspace = true
+oursql-storage.workspace = true
+serde_json.workspace = true
+
